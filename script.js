@@ -78,8 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             settingsStatus.textContent = 'Settings loaded.';
             settingsStatus.className = 'success';
-            if (settings.baseUrl && settings.accessToken) {
-                fetchTimeboxes(); // Attempt to fetch timeboxes if settings are present
+            if (settings.baseUrl && (settings.accessToken || (settings.username && settings.password))) {
+                // Start both data fetches in parallel with a timeout
+                loadInitialData();
             }
         } else {
             settingsStatus.textContent = 'No settings found. Please configure.';
@@ -581,13 +582,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const username = result.Attributes?.Username?.value || 'unknown user'; // Safer access
             settingsStatus.textContent = `Connection successful! Authenticated as ${username}.`;
             settingsStatus.className = 'success';
-            fetchTimeboxes(); // Fetch timeboxes now that connection is confirmed
-            fetchTargetParents(); // Fetch target parents as well
+            // Load both in parallel with timeout
+            loadInitialData();
         } else {
             // Error message handled by v1ApiCall
             // Clear dropdowns if connection fails
             populateTimeboxSelect(sourceTimeboxSelect, null);
             populateTimeboxSelect(targetTimeboxSelect, null);
+            populateParentSelect(targetParentSelect, null);
         }
     }
 
@@ -643,6 +645,28 @@ document.addEventListener('DOMContentLoaded', () => {
     targetTimeboxSelect.addEventListener('change', checkCopyButtonState);
     targetParentSelect.addEventListener('change', checkCopyButtonState);
 
+    // Add this new function to handle parallel loading with timeout
+    async function loadInitialData() {
+        showStatus('Loading data, please wait...', false);
+        
+        // Create a promise that rejects after 30 seconds
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Data loading timed out after 30 seconds')), 30000);
+        });
+        
+        try {
+            // Start both data fetches in parallel and race against timeout
+            await Promise.race([
+                Promise.all([fetchTimeboxes(), fetchTargetParents()]),
+                timeoutPromise
+            ]);
+            
+            showStatus('Data loaded successfully.', false);
+        } catch (error) {
+            console.error('Error loading initial data:', error);
+            showStatus(`Error loading data: ${error.message}`, true);
+        }
+    }
 
     // --- Initial Load ---
     loadSettings();
