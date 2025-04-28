@@ -167,15 +167,24 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             const ntlmAxiosConfig = { ...baseAxiosConfig };
 
             // *** NTLM-specific Header Adjustments ***
-            // 1. REMOVE the original Authorization header; NTLM handles proxy auth.
+            // 1. REMOVE the original Authorization header.
             delete ntlmAxiosConfig.headers.Authorization;
             console.log('[Debug] Removed Authorization header for NTLM path.');
 
-            // 2. FORWARD original Cookie header if present.
-            if (req.headers.cookie) {
-                ntlmAxiosConfig.headers.Cookie = req.headers.cookie;
-                console.log('[Debug] Forwarded Cookie header for NTLM path.');
-            }
+            // 2. UPDATE Accept header to match browser.
+            ntlmAxiosConfig.headers.Accept = 'application/json, text/plain, */*';
+            console.log('[Debug] Updated Accept header for NTLM path.');
+
+            // 3. FORWARD specific essential headers from original request if present.
+            const headersToForward = ['cookie', 'user-agent', 'referer', 'x-requested-with'];
+            headersToForward.forEach(headerName => {
+                if (req.headers[headerName]) {
+                    // Axios headers are case-insensitive, but let's match the common casing
+                    const properCaseHeader = headerName.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('-');
+                    ntlmAxiosConfig.headers[properCaseHeader] = req.headers[headerName];
+                    console.log(`[Debug] Forwarded ${properCaseHeader} header for NTLM path.`);
+                }
+            });
             // *** End NTLM Header Adjustments ***
 
             // Log detailed NTLM request config
