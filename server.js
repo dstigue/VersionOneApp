@@ -6,6 +6,8 @@ const https = require('https'); // Require https module
 const { URL } = require('url'); // <<< Add back
 // const { PacProxyAgent } = require('pac-proxy-agent'); // TEMP remove
 const axios = require('axios'); // <<< Import axios
+const { HttpProxyAgent } = require('http-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // Disable certificate validation globally
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -90,82 +92,41 @@ app.use((req, res, next) => {
   next();
 });
 
-// Function to intelligently determine proxy configuration
-function getProxyConfiguration(targetUrl) {
-  // Check for protocol-specific proxy environment variables first
-  // If target is https, prefer HTTPS_PROXY, otherwise prefer HTTP_PROXY
-  const isTargetHttps = targetUrl.startsWith('https:');
-  
-  console.log(`[App Proxy] Target URL protocol: ${isTargetHttps ? 'HTTPS' : 'HTTP'}`);
-  
-  // Select the appropriate proxy environment variable based on target protocol
-  let proxyEnv;
-  if (isTargetHttps) {
-    proxyEnv = process.env.HTTPS_PROXY || process.env.https_proxy || 
-               process.env.HTTP_PROXY || process.env.http_proxy;
-    console.log(`[App Proxy] Looking for HTTPS proxy first because target is HTTPS`);
-  } else {
-    proxyEnv = process.env.HTTP_PROXY || process.env.http_proxy || 
-               process.env.HTTPS_PROXY || process.env.https_proxy;
-    console.log(`[App Proxy] Looking for HTTP proxy first because target is HTTP`);
-  }
-  
-  if (!proxyEnv) {
-    console.log('[App Proxy] No proxy environment variables detected.');
-    return undefined; // No proxy config - use direct connection
-  }
-
-  try {
-    // Extract proxy URL and parse it
-    console.log(`[App Proxy] Detected proxy environment variable: ${proxyEnv}`);
+// Replace the getProxyConfiguration function with a direct agent approach
+function createProxyAgent(targetUrl) {
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || 
+                    process.env.HTTP_PROXY || process.env.http_proxy;
     
-    // Ensure URL has a protocol
-    let proxyUrlString = proxyEnv;
-    if (!proxyUrlString.includes('://')) {
-      // Add default protocol if missing
-      proxyUrlString = `http://${proxyUrlString}`;
-      console.log(`[App Proxy] Added missing protocol to proxy URL: ${proxyUrlString}`);
+    if (!proxyUrl) {
+        console.log('[App Proxy] No proxy environment variables detected.');
+        return null;
     }
     
-    const proxyUrl = new URL(proxyUrlString);
+    console.log(`[App Proxy] Using proxy URL: ${proxyUrl}`);
     
-    // Validate protocol - ensure it ends with a colon
-    let protocol = proxyUrl.protocol;
-    if (!protocol.endsWith(':')) {
-      protocol = `${protocol}:`;
-      console.log(`[App Proxy] Fixed protocol format: ${protocol}`);
+    // Determine if target is HTTPS
+    const isTargetHttps = targetUrl.toLowerCase().startsWith('https://');
+    console.log(`[App Proxy] Target protocol is ${isTargetHttps ? 'HTTPS' : 'HTTP'}`);
+    
+    try {
+        // Always use the appropriate agent based on target protocol
+        if (isTargetHttps) {
+            // For HTTPS targets, use HttpsProxyAgent
+            console.log('[App Proxy] Creating HttpsProxyAgent for HTTPS target');
+            return new HttpsProxyAgent(proxyUrl, {
+                // Important options that help with corporate proxies
+                rejectUnauthorized: false,
+                secureProxy: false // Try this first (assumes HTTP proxy)
+            });
+        } else {
+            // For HTTP targets, use HttpProxyAgent
+            console.log('[App Proxy] Creating HttpProxyAgent for HTTP target');
+            return new HttpProxyAgent(proxyUrl);
+        }
+    } catch (e) {
+        console.error(`[App Proxy] Error creating proxy agent:`, e);
+        return null;
     }
-    
-    // Parse into object format that axios expects
-    const proxyConfig = {
-      host: proxyUrl.hostname,
-      port: parseInt(proxyUrl.port) || (protocol === 'https:' ? 443 : 80),
-      protocol: protocol
-    };
-    
-    // Add auth if present in proxy URL
-    if (proxyUrl.username) {
-      proxyConfig.auth = {
-        username: proxyUrl.username,
-        password: proxyUrl.password || ''
-      };
-      console.log(`[App Proxy] Using proxy authentication for user: ${proxyUrl.username}`);
-    }
-    
-    console.log(`[App Proxy] Constructed proxy configuration:`);
-    console.log(`  Protocol: ${proxyConfig.protocol}`);
-    console.log(`  Host: ${proxyConfig.host}`);
-    console.log(`  Port: ${proxyConfig.port}`);
-    
-    return proxyConfig;
-  } catch (e) {
-    console.error(`[App Proxy] Error parsing proxy URL (${proxyEnv}):`, e.message);
-    console.log('[App Proxy] Attempting to use proxy string directly');
-    
-    // As a fallback, just use the string directly instead of parsing it
-    // This relies on axios's internal proxy handling
-    return proxyEnv;
-  }
 }
 
 // --- Revert back to defining proxy route directly on app --- 
@@ -203,7 +164,6 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     console.log(`[App Proxy] Query params: ${queryParams || 'None'}`);
     
     const targetUrl = `${v1BaseUrl.replace(/\/$/, '')}/${actualApiPath}${queryParams ? '?' + queryParams : ''}`;
-
     console.log(`[App Proxy] Full target URL: ${targetUrl}`);
 
     try {
@@ -216,20 +176,10 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             throw new Error(`Invalid target URL: ${urlError.message}`);
         }
 
-        // Get the proxy configuration - undefined means use env vars
-        // Check if we should bypass proxy with a query param for debugging
-        const shouldUseProxy = req.query.direct !== 'true';
+        // Get the proxy agent based on target URL
+        const proxyAgent = createProxyAgent(targetUrl);
+        console.log(`[App Proxy] Proxy agent created: ${proxyAgent ? 'Yes' : 'No'}`);
         
-        // Determine proxy configuration
-        let proxyConfig;
-        if (!shouldUseProxy) {
-            console.log('[App Proxy] Proxy BYPASS requested via query parameter');
-            proxyConfig = false; // Explicitly disable
-        } else {
-            proxyConfig = getProxyConfiguration(targetUrl);
-            // If undefined, axios uses env vars automatically
-        }
-
         // Configure axios request
         const axiosConfig = {
             method: req.method,
@@ -237,50 +187,80 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             headers: {
                 'Authorization': v1AuthHeader,
                 'Accept': 'application/json',
-                ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] })
+                ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] }),
+                // Add proxy-specific headers if needed
+                'Proxy-Connection': 'keep-alive'
             },
             ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
-            httpsAgent: targetUrl.startsWith('https://') ? httpsAgent : undefined,
+            // Important: For HTTPS targets, we need both httpsAgent and a httpAgent depending on proxy type
+            ...(targetUrl.startsWith('https://') && {
+                httpsAgent: proxyAgent || new https.Agent({
+                    rejectUnauthorized: false,
+                    secureOptions: require('constants').SSL_OP_LEGACY_SERVER_CONNECT,
+                    checkServerIdentity: () => undefined
+                })
+            }),
+            // For HTTP targets, or if no agent created
+            ...((!targetUrl.startsWith('https://') || !proxyAgent) && {
+                httpAgent: proxyAgent
+            }),
             validateStatus: function (status) {
                 return status >= 200 && status < 600;
             },
-            // Set proxy configuration intelligently
-            ...(proxyConfig !== undefined && { proxy: proxyConfig })
+            // Explicitly disable axios's built-in proxy handling since we're using agents
+            proxy: false,
+            // Add a timeout to prevent hanging
+            timeout: 30000
         };
 
+        // Log outgoing configuration
         console.log('[App Proxy] Outgoing request configuration:');
         console.log(`  Method: ${axiosConfig.method}`);
         console.log(`  URL: ${axiosConfig.url}`);
         console.log('  Headers:');
         Object.keys(axiosConfig.headers).forEach(key => {
-          console.log(`    ${key}: ${key.toLowerCase() === 'authorization' ? axiosConfig.headers[key].substring(0, 15) + '...' : axiosConfig.headers[key]}`);
+            console.log(`    ${key}: ${key.toLowerCase() === 'authorization' ? axiosConfig.headers[key].substring(0, 15) + '...' : axiosConfig.headers[key]}`);
         });
-        console.log(`  HTTPS Agent applied: ${!!axiosConfig.httpsAgent}`);
+        console.log(`  Using proxy agent: ${!!proxyAgent}`);
+        console.log(`  Timeout: ${axiosConfig.timeout}ms`);
         
-        // Enhanced proxy logging
-        if (axiosConfig.proxy === false) {
-            console.log('  Proxy: EXPLICITLY DISABLED');
-        } else if (axiosConfig.proxy) {
-            console.log('  Proxy: EXPLICIT CONFIG', JSON.stringify(axiosConfig.proxy, null, 2));
-        } else {
-            console.log('  Proxy: Using system environment variables (if any)');
+        // Use a single retry if the first attempt fails with specific proxy-related errors
+        try {
+            console.log('[App Proxy] Making first axios request attempt...');
+            const apiResponse = await customAxios(axiosConfig);
+            // If successful, process the response
+            // Rest of your response handling code...
+        } catch (firstError) {
+            // Check if it's a common proxy error that might benefit from retrying
+            const isProxyError = firstError.code === 'ECONNRESET' || 
+                                firstError.code === 'ECONNREFUSED' ||
+                                firstError.code === 'ENOTFOUND' ||
+                                (firstError.response && firstError.response.status === 407);
+                                
+            if (isProxyError) {
+                console.log(`[App Proxy] Proxy error detected (${firstError.code || firstError.message}). Retrying with alternate configuration...`);
+                
+                // Try with different agent configuration
+                if (targetUrl.startsWith('https://')) {
+                    console.log('[App Proxy] Retry: Creating new HttpsProxyAgent with altered settings');
+                    // Try with different security settings on the retry
+                    const retryAgent = new HttpsProxyAgent(proxyUrl, {
+                        rejectUnauthorized: false,
+                        secureProxy: true  // Try secure proxy on second attempt
+                    });
+                    axiosConfig.httpsAgent = retryAgent;
+                }
+                
+                // Make the retry attempt
+                console.log('[App Proxy] Making retry axios request...');
+                const apiResponse = await customAxios(axiosConfig);
+                // If successful, process the response
+                // Rest of your response handling code...
+            } else {
+                // Not a proxy-specific error, rethrow
+                throw firstError;
+            }
         }
-        
-        if (axiosConfig.data) {
-          console.log('  Request data:', JSON.stringify(axiosConfig.data, null, 2));
-        }
-
-        console.log('[App Proxy] Making axios request...');
-        
-        // Add timing information
-        const startTime = Date.now();
-        
-        // Use our custom axios instance
-        const apiResponse = await customAxios(axiosConfig);
-        
-        const endTime = Date.now();
-        console.log(`[App Proxy] Request completed in ${endTime - startTime}ms`);
-        console.log(`[App Proxy] Response status: ${apiResponse.status}`);
         
         // Log response headers
         console.log('[App Proxy] Response headers:');
