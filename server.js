@@ -141,17 +141,18 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             method: req.method,
             url: targetUrl,
             headers: {
+                'Authorization': v1AuthHeader,
                 'Accept': 'application/json',
                 ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] }),
             },
             ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
             validateStatus: function (status) {
-                return status >= 200 && status < 600; 
+                return status >= 200 && status < 600;
             },
-            timeout: 30000, 
+            timeout: 30000,
             maxRedirects: 0,
-            httpsAgent: new https.Agent({  
-                rejectUnauthorized: false, 
+            httpsAgent: new https.Agent({
+                rejectUnauthorized: false,
                 keepAlive: true,
             })
         };
@@ -159,21 +160,25 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         if (ntlmCredentials) {
             // ---> Use NTLM Proxy via axios-ntlm
             console.log(`[App Proxy] Using NTLM proxy credentials: username='${ntlmCredentials.username}', domain='${ntlmCredentials.domain || '(none)'}'`);
-            
+
             const ntlmClient = NtlmClient(ntlmCredentials);
 
-            const ntlmAxiosConfig = {
-                method: req.method,
-                url: targetUrl,
-                headers: baseAxiosConfig.headers, 
-                ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
-                validateStatus: baseAxiosConfig.validateStatus,
-                timeout: baseAxiosConfig.timeout,
-                maxRedirects: baseAxiosConfig.maxRedirects,
-                httpsAgent: baseAxiosConfig.httpsAgent 
-            };
+            // Start with base config for NTLM request
+            const ntlmAxiosConfig = { ...baseAxiosConfig };
 
-            // <<< Log detailed NTLM request config >>>
+            // *** NTLM-specific Header Adjustments ***
+            // 1. REMOVE the original Authorization header; NTLM handles proxy auth.
+            delete ntlmAxiosConfig.headers.Authorization;
+            console.log('[Debug] Removed Authorization header for NTLM path.');
+
+            // 2. FORWARD original Cookie header if present.
+            if (req.headers.cookie) {
+                ntlmAxiosConfig.headers.Cookie = req.headers.cookie;
+                console.log('[Debug] Forwarded Cookie header for NTLM path.');
+            }
+            // *** End NTLM Header Adjustments ***
+
+            // Log detailed NTLM request config
             console.log('[App Proxy] NTLM Request Config:', JSON.stringify({
                 method: ntlmAxiosConfig.method,
                 url: ntlmAxiosConfig.url,
@@ -192,13 +197,14 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             // ---> No Proxy or invalid credentials - Attempt Direct Connection via standard axios
             console.warn('[App Proxy] NTLM proxy credentials not found or incomplete in HTTPS_PROXY. Attempting direct connection...');
             
-            const directAxiosConfig = { ...baseAxiosConfig }; 
+            // Use baseAxiosConfig AS IS (includes original Authorization header)
+            const directAxiosConfig = { ...baseAxiosConfig };
 
-            // <<< Log detailed Direct request config >>>
+            // Log detailed Direct request config
             console.log('[App Proxy] Direct Request Config:', JSON.stringify({
                 method: directAxiosConfig.method,
                 url: directAxiosConfig.url,
-                headers: directAxiosConfig.headers,
+                headers: directAxiosConfig.headers, // Should include Authorization here
                 data: directAxiosConfig.data ? (typeof directAxiosConfig.data === 'object' ? '[Object]' : '[Data Present]') : '[No Data]',
                 timeout: directAxiosConfig.timeout,
                 maxRedirects: directAxiosConfig.maxRedirects,
@@ -207,7 +213,7 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             }, null, 2));
 
             console.log('[App Proxy] Making request via standard axios (direct)');
-            apiResponse = await axios(directAxiosConfig); 
+            apiResponse = await axios(directAxiosConfig);
         }
         
         // Common response handling
