@@ -1,6 +1,7 @@
 const express = require('express');
 const fetch = require('node-fetch'); // Use require for node-fetch v2
 const path = require('path');
+const https = require('https'); // <<< Require https module
 
 const app = express();
 const port = process.env.PORT || 3000; // Use environment variable or default to 3000
@@ -25,6 +26,16 @@ app.all('/api/v1/*', async (req, res) => {
         return res.status(400).json({ error: 'Missing X-V1-Base-URL or Authorization header for proxy.' });
     }
 
+    // --- Configure HTTPS Agent to ignore self-signed certs --- 
+    let httpsAgent = null;
+    if (targetUrl.startsWith('https://')) {
+        httpsAgent = new https.Agent({
+            rejectUnauthorized: false // <<< IMPORTANT: Disables SSL verification
+        });
+        console.warn('WARNING: Bypassing SSL certificate validation for:', targetUrl);
+    }
+    // --- End HTTPS Agent config --- 
+
     try {
         const options = {
             method: req.method,
@@ -37,6 +48,12 @@ app.all('/api/v1/*', async (req, res) => {
             // Add body only if it's a POST/PUT/etc. and body exists
             ...(req.body && Object.keys(req.body).length > 0 && { body: JSON.stringify(req.body) })
         };
+
+        // --- Add agent to options if HTTPS --- 
+        if (httpsAgent) {
+            options.agent = httpsAgent;
+        }
+        // --- End Add agent ---
 
         const apiResponse = await fetch(targetUrl, options);
 
