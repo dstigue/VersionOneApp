@@ -5,37 +5,100 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VersionOne Story Copier</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Additional inline styles for consistency */
+        .form-row {
+            margin-bottom: 15px;
+        }
+        .wide-input {
+            width: 100%;
+            max-width: 500px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        .auth-options {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .auth-section {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        .auth-input-row {
+            margin-bottom: 10px;
+        }
+        .auth-input-row label {
+            display: inline-block;
+            width: 100px;
+            margin-right: 10px;
+        }
+        .auth-input-row input {
+            width: 280px;
+            padding: 5px;
+        }
+    </style>
 </head>
 <body>
     <h1>VersionOne Story Copier</h1>
 
-    <div id="settings-section">
+    <div id="settings">
         <h2>Settings</h2>
-        <label>Authentication Method:</label>
-        <input type="radio" id="auth-token" name="auth-method" value="token" checked>
-        <label for="auth-token">Access Token</label>
-        <input type="radio" id="auth-basic" name="auth-method" value="basic">
-        <label for="auth-basic">Username/Password</label>
-        <br>
+        <div id="settings-form">
+            <div class="form-row">
+                <label for="v1-url">VersionOne Base URL:</label>
+                <input type="text" id="v1-url" class="wide-input" placeholder="e.g., https://your-instance.versionone.net/v1/">
+            </div>
 
-        <div id="token-input-section">
-            <label for="v1-token">Access Token:</label>
-            <input type="password" id="v1-token" placeholder="Your Access Token">
+            <div class="form-row">
+                <label>Authentication Method:</label>
+                <div class="auth-options">
+                    <div>
+                        <input type="radio" id="auth-ntlm" name="auth-method" value="ntlm" checked>
+                        <label for="auth-ntlm">NTLM (Proxy)</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="auth-token" name="auth-method" value="token">
+                        <label for="auth-token">Access Token</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="auth-basic" name="auth-method" value="basic">
+                        <label for="auth-basic">Basic Auth</label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="ntlm-input-section" class="auth-section">
+                <p>NTLM authentication uses the HTTPS_PROXY environment variable configured on the server.</p>
+                <p>No additional credentials needed here.</p>
+            </div>
+
+            <div id="token-input-section" class="auth-section" style="display: none;">
+                <div class="auth-input-row">
+                    <label for="v1-token">Access Token:</label>
+                    <input type="password" id="v1-token">
+                </div>
+            </div>
+
+            <div id="basic-auth-input-section" class="auth-section" style="display: none;">
+                <div class="auth-input-row">
+                    <label for="v1-username">Username:</label>
+                    <input type="text" id="v1-username">
+                </div>
+                <div class="auth-input-row">
+                    <label for="v1-password">Password:</label>
+                    <input type="password" id="v1-password">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <button id="save-settings">Save & Test Connection</button>
+                <span id="settings-status"></span>
+            </div>
         </div>
-
-        <div id="basic-auth-input-section" style="display: none;">
-            <label for="v1-username">Username:</label>
-            <input type="text" id="v1-username" placeholder="Your Username">
-            <br>
-            <label for="v1-password">Password:</label>
-            <input type="password" id="v1-password" placeholder="Your Password">
-        </div>
-
-        <label for="v1-url">VersionOne Base URL:</label>
-        <input type="url" id="v1-url" placeholder="https://wwwX.v1host.com/V1Instance">
-        <br>
-        <button id="save-settings">Save Settings</button>
-        <p id="settings-status"></p>
     </div>
 
     <hr>

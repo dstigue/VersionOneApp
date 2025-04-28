@@ -12,9 +12,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyButton = document.getElementById('copy-button');
     const statusMessage = document.getElementById('status-message');
     const loadingIndicator = document.getElementById('loading-indicator');
-    // New elements for auth method selection
+    // Auth method selection elements
+    const authNtlmRadio = document.getElementById('auth-ntlm'); // New NTLM option
     const authTokenRadio = document.getElementById('auth-token');
     const authBasicRadio = document.getElementById('auth-basic');
+    const ntlmInputSection = document.getElementById('ntlm-input-section'); // New NTLM section
     const tokenInputSection = document.getElementById('token-input-section');
     const basicAuthInputSection = document.getElementById('basic-auth-input-section');
     const v1UsernameInput = document.getElementById('v1-username');
@@ -22,21 +24,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let settings = {
         baseUrl: '',
-        authMethod: 'token', // Default to token
+        authMethod: 'ntlm', // Default to NTLM
         accessToken: '',
         username: '',
         password: '',
-        targetParentAssetType: 'Epic' // <<< --- IMPORTANT: Change 'Epic' if your Super relates to a different asset type (e.g., 'Theme')
+        targetParentAssetType: 'Epic'
     };
 
     // --- Settings Handling ---
     function toggleAuthInputs() {
-        if (authTokenRadio.checked) {
+        // Hide all auth input sections first
+        ntlmInputSection.style.display = 'none';
+        tokenInputSection.style.display = 'none';
+        basicAuthInputSection.style.display = 'none';
+        
+        // Show the selected one
+        if (authNtlmRadio.checked) {
+            ntlmInputSection.style.display = 'block';
+        } else if (authTokenRadio.checked) {
             tokenInputSection.style.display = 'block';
-            basicAuthInputSection.style.display = 'none';
-        } else {
+        } else if (authBasicRadio.checked) {
             console.log('Switching to Basic Auth view');
-            tokenInputSection.style.display = 'none';
             basicAuthInputSection.style.display = 'block';
         }
     }
@@ -45,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedSettings = localStorage.getItem('v1CopierSettings');
         const defaultSettings = { // Define defaults clearly
             baseUrl: '',
-            authMethod: 'token',
+            authMethod: 'ntlm', // Updated default to NTLM
             accessToken: '',
             username: '',
             password: '',
@@ -70,15 +78,18 @@ document.addEventListener('DOMContentLoaded', () => {
             // Set the correct radio button
             if (settings.authMethod === 'basic') {
                 authBasicRadio.checked = true;
+            } else if (settings.authMethod === 'token') {
+                authTokenRadio.checked = true;
             } else {
-                authTokenRadio.checked = true; // Default to token if unset or invalid
-                settings.authMethod = 'token'; // Ensure setting is consistent
+                // Default to NTLM or explicitly set NTLM
+                authNtlmRadio.checked = true;
+                settings.authMethod = 'ntlm'; // Ensure setting is consistent
             }
             toggleAuthInputs(); // Show/hide correct fields
 
             settingsStatus.textContent = 'Settings loaded.';
             settingsStatus.className = 'success';
-            if (settings.baseUrl && (settings.accessToken || (settings.username && settings.password))) {
+            if (settings.baseUrl) {
                 // Start both data fetches in parallel with a timeout
                 loadInitialData();
             }
@@ -91,7 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveSettings() {
         const newBaseUrl = v1UrlInput.value.trim();
-        const selectedAuthMethod = authBasicRadio.checked ? 'basic' : 'token';
+        const selectedAuthMethod = authNtlmRadio.checked ? 'ntlm' : 
+                                  (authBasicRadio.checked ? 'basic' : 'token');
         const newAccessToken = v1TokenInput.value.trim();
         const newUsername = v1UsernameInput.value.trim();
         const newPassword = v1PasswordInput.value.trim(); // Avoid trimming passwords
@@ -104,15 +116,18 @@ document.addEventListener('DOMContentLoaded', () => {
             errorMsg = 'Base URL cannot be empty. ';
         }
 
+        // Validate based on selected auth method
         if (selectedAuthMethod === 'token' && !newAccessToken) {
             isValid = false;
-            errorMsg += 'Access Token cannot be empty. ';
+            errorMsg += 'Access Token cannot be empty for Token Auth. ';
         }
 
         if (selectedAuthMethod === 'basic' && (!newUsername || !newPassword)) {
             isValid = false;
             errorMsg += 'Username and Password cannot be empty for Basic Auth. ';
         }
+
+        // NTLM doesn't require validation here since it's handled by the proxy server
 
         // Basic URL validation
         if (newBaseUrl) {
@@ -142,13 +157,13 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsStatus.textContent = 'Settings saved. Testing connection...'; // Update status before test
         settingsStatus.className = 'success';
         await testConnection(); // Call the connection test
-        // fetchTimeboxes(); // We can let testConnection call fetchTimeboxes on success
     }
 
     saveSettingsButton.addEventListener('click', saveSettings);
     // Add event listeners for radio buttons
     authTokenRadio.addEventListener('change', toggleAuthInputs);
     authBasicRadio.addEventListener('change', toggleAuthInputs);
+    authNtlmRadio.addEventListener('change', toggleAuthInputs);
 
     // --- API Call Helper ---
     async function v1ApiCall(endpoint, method = 'GET', body = null, suppressStatusUpdate = false) {
@@ -176,6 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!suppressStatusUpdate) showStatus('Error encoding credentials for Basic Auth.', true);
                 return null;
             }
+        } else if (settings.authMethod === 'ntlm') {
+            // NTLM auth is handled by the proxy - we don't need to set an auth header here
+            console.log('Using NTLM authentication via proxy');
+            // No error condition to check since auth is handled server-side
         } else {
             if (!suppressStatusUpdate) showStatus('Error: Invalid authentication method selected.', true);
             return null;
@@ -183,10 +202,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const proxyUrl = `/api/v1/${endpoint.replace(/^\//, '')}`;
         const headers = {
-            'Authorization': authHeaderValue,
             'X-V1-Base-URL': settings.baseUrl,
             'Accept': 'application/json'
         };
+        
+        // Only add Authorization header for non-NTLM auth methods
+        if (settings.authMethod !== 'ntlm' && authHeaderValue) {
+            headers['Authorization'] = authHeaderValue;
+        }
 
         const options = {
             method: method,
@@ -271,6 +294,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateTimeboxSelect(selectElement, timeboxes) {
         selectElement.innerHTML = '<option value="">-- Select Timebox --</option>'; // Clear existing options
         if (timeboxes && timeboxes.Assets) {
+            // Helper function to format date string (YYYY-MM-DDTHH:mm:ss) to YYYY-MM-DD
+            const formatDate = (dateString) => {
+                if (!dateString) return 'N/A';
+                try {
+                    return dateString.substring(0, 10);
+                } catch {
+                    return 'Invalid Date';
+                }
+            };
+
             timeboxes.Assets.sort((a, b) => {
                 // Attempt to sort by Name, handle potential missing attributes gracefully
                 const nameA = a.Attributes?.Name?.value || '';
@@ -279,9 +312,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }).forEach(tb => {
                 const name = tb.Attributes?.Name?.value || 'Unnamed Timebox';
                 const id = tb.id;
+                // Extract new attributes safely
+                const beginDate = formatDate(tb.Attributes?.BeginDate?.value);
+                const endDate = formatDate(tb.Attributes?.EndDate?.value);
+                const ownerName = tb.Attributes?.['Owner.Name']?.value || 'N/A';
+                const scheduleName = tb.Attributes?.['Schedule.Name']?.value || 'N/A'; // Assuming 'Spring Schedule Text' is Schedule Name
+
                 const option = document.createElement('option');
                 option.value = id;
-                option.textContent = name;
+                // Construct display text with new info
+                option.textContent = `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}, Schedule: ${scheduleName}`;
                 selectElement.appendChild(option);
             });
         } else {
@@ -293,8 +333,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchTimeboxes() {
         showStatus('Fetching timeboxes...');
-        // Fetch only active timeboxes
-        const timeboxes = await v1ApiCall('rest-1.v1/Data/Timebox?sel=Name&where=AssetState=\'64\'');
+        // Fetch only active timeboxes - ADDED BeginDate, EndDate, Owner.Name, Schedule.Name to sel
+        const timeboxSelectFields = 'Name,BeginDate,EndDate,Owner.Name,Schedule.Name';
+        const timeboxes = await v1ApiCall(`rest-1.v1/Data/Timebox?sel=${timeboxSelectFields}&where=AssetState='64'`);
         if (timeboxes) {
             populateTimeboxSelect(sourceTimeboxSelect, timeboxes);
             populateTimeboxSelect(targetTimeboxSelect, timeboxes);
@@ -317,12 +358,20 @@ document.addEventListener('DOMContentLoaded', () => {
         storiesListDiv.innerHTML = ''; // Clear previous list
         copyButton.disabled = true;
 
-        // Fetch stories in the selected timebox
-        const stories = await v1ApiCall(`rest-1.v1/Data/Story?sel=Name,Number,Children:Task[AssetState!='128'].Name&where=Timebox='${timeboxId}';AssetState='64'`);
+        // Construct the query
+        // Fetch Stories (PrimaryWorkitem) first
+        // REMOVED ;AssetState='64' from the where clause
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task[AssetState!='Closed'].{Name,Description}&where=Timebox.ID='${timeboxId}'`; 
+        const storyResponse = await v1ApiCall(storyQuery);
+        if (!storyResponse || !storyResponse.Assets) {
+            showStatus('No stories found or error fetching stories.', true);
+            showLoading(false);
+            return;
+        }
 
-        if (stories && stories.Assets && stories.Assets.length > 0) {
+        if (storyResponse && storyResponse.Assets && storyResponse.Assets.length > 0) {
             const ul = document.createElement('ul');
-            stories.Assets.forEach(story => {
+            storyResponse.Assets.forEach(story => {
                 const li = document.createElement('li');
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
@@ -366,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             storiesListDiv.appendChild(ul);
             showStatus('Stories loaded. Select stories to copy.');
-        } else if (stories) { // Request succeeded but no stories found
+        } else if (storyResponse) { // Request succeeded but no stories found
             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
             showStatus('No active stories found.');
         } else { // API call failed
