@@ -43,8 +43,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadSettings() {
         const savedSettings = localStorage.getItem('v1CopierSettings');
+        const defaultSettings = { // Define defaults clearly
+            baseUrl: '',
+            authMethod: 'token',
+            accessToken: '',
+            username: '',
+            password: '',
+            targetParentAssetType: 'Epic' 
+        };
+
         if (savedSettings) {
-            settings = JSON.parse(savedSettings);
+            try {
+                const loaded = JSON.parse(savedSettings);
+                // Merge loaded settings onto defaults
+                settings = { ...defaultSettings, ...loaded }; 
+            } catch (e) {
+                console.error("Failed to parse saved settings, using defaults:", e);
+                settings = { ...defaultSettings }; // Use defaults if parsing fails
+            }
+            
             v1UrlInput.value = settings.baseUrl || '';
             v1TokenInput.value = settings.accessToken || '';
             v1UsernameInput.value = settings.username || '';
