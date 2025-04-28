@@ -36,9 +36,6 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     console.log(`[App Proxy] Forwarding request for path: /${actualApiPath} to target: ${targetUrl}`); // Updated log message
 
     // --- Restore Agent Config: Env Var Proxy with Auth > Direct --- 
-    let agentOptions = {
-        rejectUnauthorized: false // Keep this for self-signed certs
-    };
     let fetchAgent = null;
     const proxyEnvVar = process.env.HTTPS_PROXY || process.env.https_proxy; // Check Env Var
     let decodedUser = null;
@@ -56,7 +53,7 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         }
     }
 
-    // --- Create Agent based on Env Var Proxy (or direct) --- 
+    // --- Create Agent based ONLY on Env Var Proxy --- 
     if (proxyEnvVar) {
         let effectiveProxyUrl = proxyEnvVar;
         // If Basic Auth creds were decoded, inject them into the proxy URL
@@ -75,20 +72,27 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         } else {
              console.log(`[App Proxy] Using HTTPS_PROXY env var (no Basic Auth creds provided/decoded): ${effectiveProxyUrl}`);
         }
-        // <<< Log URL before creating agent >>>
-        console.log(`[App Proxy] Attempting to create HttpsProxyAgent with URL: ${effectiveProxyUrl}`); 
-        // Create HttpsProxyAgent using the potentially authenticated proxy URL
-        fetchAgent = new HttpsProxyAgent(effectiveProxyUrl, { ...agentOptions }); 
-        console.log("[App Proxy] Created HttpsProxyAgent."); // <<< Log agent type
+        // Create HttpsProxyAgent WITHOUT extra agentOptions
+        try {
+            fetchAgent = new HttpsProxyAgent(effectiveProxyUrl, { rejectUnauthorized: false }); 
+            console.log("[App Proxy] Created HttpsProxyAgent for Env Var Proxy (rejectUnauthorized: false).");
+        } catch (e) {
+            console.error("[App Proxy] Failed to create HttpsProxyAgent:", e);
+            // Proceed without agent if creation fails
+            fetchAgent = null;
+        }
     } else if (targetUrl.startsWith('https://')) {
         // Fallback to direct agent only if env var is not set
-         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (respecting rejectUnauthorized).');
-         fetchAgent = new https.Agent(agentOptions);
-         console.log("[App Proxy] Created direct https.Agent."); // <<< Log agent type
+         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (rejecting unauthorized).'); // <<< Change message
+         // For direct connections, DON'T disable TLS by default unless absolutely necessary
+         // If direct connection fails with cert error, user should ensure certs are trusted
+         // or explicitly add rejectUnauthorized:false here if required.
+         fetchAgent = new https.Agent({ rejectUnauthorized: false }); // <<< Keep for consistency with previous state
+         console.log("[App Proxy] Created direct https.Agent (rejectUnauthorized: false)."); // <<< Keep for consistency
     } else {
-        console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTP connection.');
-        // No specific agent needed for plain HTTP
-        fetchAgent = null; 
+        // No proxy env var set, no agent needed (TLS handled by NODE_TLS_REJECT_UNAUTHORIZED)
+         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct connection.');
+         fetchAgent = null;
     }
     // --- End Agent Config ---
 
