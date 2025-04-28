@@ -69,14 +69,14 @@ if (-not (Test-Path -Path .\package.json -PathType Leaf)) {
     Exit 1
 }
 
-# --- Run npm install --- 
+<# # --- Run npm install --- 
 Write-Host "Running 'npm install' to install dependencies..."
 npm install
 if ($LASTEXITCODE -ne 0) {
     Write-Error "'npm install' failed. Please check the errors above."
     Exit 1
 }
-Write-Host "'npm install' completed successfully." -ForegroundColor Green
+Write-Host "'npm install' completed successfully." -ForegroundColor Green #>
 
 # --- Run npm start --- 
 Write-Host "Starting the server via 'npm start'... (Press Ctrl+C to stop the server)" -ForegroundColor Cyan

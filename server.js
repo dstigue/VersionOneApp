@@ -77,10 +77,12 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         }
         // Create HttpsProxyAgent using the potentially authenticated proxy URL
         fetchAgent = new HttpsProxyAgent(effectiveProxyUrl, { ...agentOptions }); 
+        console.log("[App Proxy] Created HttpsProxyAgent."); // <<< Log agent type
     } else if (targetUrl.startsWith('https://')) {
         // Fallback to direct agent only if env var is not set
          console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (respecting rejectUnauthorized).');
          fetchAgent = new https.Agent(agentOptions);
+         console.log("[App Proxy] Created direct https.Agent."); // <<< Log agent type
     } else {
         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTP connection.');
         // No specific agent needed for plain HTTP
