@@ -22,6 +22,99 @@ document.addEventListener('DOMContentLoaded', () => {
     const v1UsernameInput = document.getElementById('v1-username');
     const v1PasswordInput = document.getElementById('v1-password');
 
+    // Create filter elements
+    const sourceOwnerFilterSelect = document.createElement('select');
+    sourceOwnerFilterSelect.id = 'source-owner-filter';
+    sourceOwnerFilterSelect.className = 'filter-select';
+    
+    const sourceScheduleFilterSelect = document.createElement('select');
+    sourceScheduleFilterSelect.id = 'source-schedule-filter';
+    sourceScheduleFilterSelect.className = 'filter-select';
+    
+    const targetOwnerFilterSelect = document.createElement('select');
+    targetOwnerFilterSelect.id = 'target-owner-filter';
+    targetOwnerFilterSelect.className = 'filter-select';
+    
+    const targetScheduleFilterSelect = document.createElement('select');
+    targetScheduleFilterSelect.id = 'target-schedule-filter';
+    targetScheduleFilterSelect.className = 'filter-select';
+
+    // Add filter elements to the DOM
+    const sourceTimeboxContainer = sourceTimeboxSelect.parentElement;
+    const sourceFiltersDiv = document.createElement('div');
+    sourceFiltersDiv.className = 'filters-container';
+    
+    // Create filter groups with proper labeling
+    const sourceOwnerGroup = document.createElement('div');
+    sourceOwnerGroup.className = 'filter-group';
+    sourceOwnerGroup.innerHTML = '<label for="source-owner-filter">Owner:</label>';
+    sourceOwnerGroup.appendChild(sourceOwnerFilterSelect);
+    
+    const sourceScheduleGroup = document.createElement('div');
+    sourceScheduleGroup.className = 'filter-group';
+    sourceScheduleGroup.innerHTML = '<label for="source-schedule-filter">Schedule:</label>';
+    sourceScheduleGroup.appendChild(sourceScheduleFilterSelect);
+    
+    sourceFiltersDiv.appendChild(document.createElement('div')).innerHTML = '<div class="filter-label">Filter by:</div>';
+    sourceFiltersDiv.appendChild(sourceOwnerGroup);
+    sourceFiltersDiv.appendChild(sourceScheduleGroup);
+    sourceTimeboxContainer.insertBefore(sourceFiltersDiv, sourceTimeboxSelect.nextSibling);
+
+    const targetTimeboxContainer = targetTimeboxSelect.parentElement;
+    const targetFiltersDiv = document.createElement('div');
+    targetFiltersDiv.className = 'filters-container';
+    
+    // Create filter groups with proper labeling
+    const targetOwnerGroup = document.createElement('div');
+    targetOwnerGroup.className = 'filter-group';
+    targetOwnerGroup.innerHTML = '<label for="target-owner-filter">Owner:</label>';
+    targetOwnerGroup.appendChild(targetOwnerFilterSelect);
+    
+    const targetScheduleGroup = document.createElement('div');
+    targetScheduleGroup.className = 'filter-group';
+    targetScheduleGroup.innerHTML = '<label for="target-schedule-filter">Schedule:</label>';
+    targetScheduleGroup.appendChild(targetScheduleFilterSelect);
+    
+    targetFiltersDiv.appendChild(document.createElement('div')).innerHTML = '<div class="filter-label">Filter by:</div>';
+    targetFiltersDiv.appendChild(targetOwnerGroup);
+    targetFiltersDiv.appendChild(targetScheduleGroup);
+    targetTimeboxContainer.insertBefore(targetFiltersDiv, targetTimeboxSelect.nextSibling);
+
+    // Create a style element for the filters
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+    .filters-container {
+        display: flex;
+        align-items: center;
+        margin-top: 10px;
+        margin-bottom: 10px;
+        gap: 15px;
+    }
+    .filter-label {
+        font-weight: bold;
+        white-space: nowrap;
+    }
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .filter-group label {
+        min-width: 70px;
+        white-space: nowrap;
+    }
+    .filter-select {
+        min-width: 180px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+    }
+    `;
+    document.head.appendChild(styleElement);
+
+    // Store all timeboxes for filtering
+    let allTimeboxes = [];
+
     let settings = {
         baseUrl: '',
         authMethod: 'ntlm', // Default to NTLM
@@ -288,42 +381,168 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMessage.className = isError ? 'error' : 'success';
     }
 
-    function populateTimeboxSelect(selectElement, timeboxes) {
-        selectElement.innerHTML = '<option value="">-- Select Timebox --</option>'; // Clear existing options
-        if (timeboxes && timeboxes.Assets) {
-            // Helper function to format date string (YYYY-MM-DDTHH:mm:ss) to YYYY-MM-DD
-            const formatDate = (dateString) => {
-                if (!dateString) return 'N/A';
-                try {
-                    return dateString.substring(0, 10);
-                } catch {
-                    return 'Invalid Date';
-                }
-            };
-
-            timeboxes.Assets.sort((a, b) => {
-                // Attempt to sort by Name, handle potential missing attributes gracefully
-                const nameA = a.Attributes?.Name?.value || '';
-                const nameB = b.Attributes?.Name?.value || '';
-                return nameA.localeCompare(nameB);
-            }).forEach(tb => {
-                const name = tb.Attributes?.Name?.value || 'Unnamed Timebox';
-                const id = tb.id;
-                // Extract new attributes safely
-                const beginDate = formatDate(tb.Attributes?.BeginDate?.value);
-                const endDate = formatDate(tb.Attributes?.EndDate?.value);
-                const ownerName = tb.Attributes?.['Owner.Name']?.value || 'N/A';
-                const scheduleName = tb.Attributes?.['Schedule.Name']?.value || 'N/A'; // Assuming 'Spring Schedule Text' is Schedule Name
-
-                const option = document.createElement('option');
-                option.value = id;
-                // Construct display text with new info
-                option.textContent = `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}, Schedule: ${scheduleName}`;
-                selectElement.appendChild(option);
-            });
-        } else {
-             console.warn("No timeboxes found or invalid format:", timeboxes);
+    function populateFilterDropdowns(timeboxes, isInitialLoad = true) {
+        if (!timeboxes || !timeboxes.Assets || timeboxes.Assets.length === 0) {
+            return;
         }
+
+        // For source filters
+        updateFilterOptions(
+            timeboxes.Assets, 
+            sourceOwnerFilterSelect, 
+            sourceScheduleFilterSelect, 
+            isInitialLoad
+        );
+
+        // For target filters
+        updateFilterOptions(
+            timeboxes.Assets, 
+            targetOwnerFilterSelect, 
+            targetScheduleFilterSelect, 
+            isInitialLoad
+        );
+    }
+
+    function updateFilterOptions(timeboxAssets, ownerSelect, scheduleSelect, isInitialLoad = false) {
+        // Get current selections
+        const currentOwner = ownerSelect.value;
+        const currentSchedule = scheduleSelect.value;
+
+        // Collect available options based on current filters
+        const availableOwners = new Set();
+        const availableSchedules = new Set();
+
+        timeboxAssets.forEach(tb => {
+            const owner = tb.Attributes?.['Owner.Name']?.value || '';
+            const schedule = tb.Attributes?.['Schedule.Name']?.value || '';
+            
+            // If no schedule filter or this timebox matches the schedule filter
+            if (!currentSchedule || schedule === currentSchedule) {
+                if (owner) availableOwners.add(owner);
+            }
+            
+            // If no owner filter or this timebox matches the owner filter
+            if (!currentOwner || owner === currentOwner) {
+                if (schedule) availableSchedules.add(schedule);
+            }
+        });
+
+        // Only during initial load or when explicitly directed to update both dropdowns,
+        // update both dropdowns with all available options
+        if (isInitialLoad) {
+            updateDropdown(ownerSelect, Array.from(availableOwners), 'All Owners', currentOwner);
+            updateDropdown(scheduleSelect, Array.from(availableSchedules), 'All Schedules', currentSchedule);
+            return;
+        }
+
+        // When not initial load, we only update the "complementary" dropdown
+        // If we're updating from an owner change, update the schedule options
+        if (ownerSelect.dataset.lastChanged === 'true') {
+            updateDropdown(scheduleSelect, Array.from(availableSchedules), 'All Schedules', currentSchedule);
+            ownerSelect.dataset.lastChanged = 'false';
+        } 
+        // If we're updating from a schedule change, update the owner options
+        else if (scheduleSelect.dataset.lastChanged === 'true') {
+            updateDropdown(ownerSelect, Array.from(availableOwners), 'All Owners', currentOwner);
+            scheduleSelect.dataset.lastChanged = 'false';
+        }
+    }
+
+    function updateDropdown(selectElement, options, defaultText, currentValue) {
+        // Store current scroll position
+        const scrollTop = selectElement.scrollTop;
+        
+        // Build HTML options
+        let optionsHtml = `<option value="">${defaultText}</option>`;
+        
+        options.sort().forEach(option => {
+            // Preserve the current selection if it's in the new options
+            const selected = option === currentValue ? 'selected' : '';
+            optionsHtml += `<option value="${option}" ${selected}>${option}</option>`;
+        });
+        
+        // Set HTML and restore scroll position
+        selectElement.innerHTML = optionsHtml;
+        selectElement.scrollTop = scrollTop;
+    }
+
+    function filterTimeboxes(selectElement, ownerFilter, scheduleFilter) {
+        // Start with a clean dropdown
+        selectElement.innerHTML = '<option value="">-- Select Timebox --</option>';
+        
+        if (!allTimeboxes || !allTimeboxes.Assets) {
+            return;
+        }
+
+        // Apply filters
+        const filteredTimeboxes = allTimeboxes.Assets.filter(tb => {
+            const owner = tb.Attributes?.['Owner.Name']?.value || '';
+            const schedule = tb.Attributes?.['Schedule.Name']?.value || '';
+            
+            const ownerMatch = !ownerFilter || owner === ownerFilter;
+            const scheduleMatch = !scheduleFilter || schedule === scheduleFilter;
+            
+            return ownerMatch && scheduleMatch;
+        });
+
+        // Helper function to format date string
+        const formatDate = (dateString) => {
+            if (!dateString) return 'N/A';
+            try {
+                return dateString.substring(0, 10);
+            } catch {
+                return 'Invalid Date';
+            }
+        };
+
+        // Sort and populate the dropdown
+        filteredTimeboxes.sort((a, b) => {
+            const nameA = a.Attributes?.Name?.value || '';
+            const nameB = b.Attributes?.Name?.value || '';
+            return nameA.localeCompare(nameB);
+        }).forEach(tb => {
+            const name = tb.Attributes?.Name?.value || 'Unnamed Timebox';
+            const id = tb.id;
+            const beginDate = formatDate(tb.Attributes?.BeginDate?.value);
+            const endDate = formatDate(tb.Attributes?.EndDate?.value);
+            const ownerName = tb.Attributes?.['Owner.Name']?.value || 'N/A';
+            const scheduleName = tb.Attributes?.['Schedule.Name']?.value || 'N/A';
+
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}, Schedule: ${scheduleName}`;
+            selectElement.appendChild(option);
+        });
+
+        // Check if nothing matches filters
+        if (filteredTimeboxes.length === 0) {
+            const option = document.createElement('option');
+            option.disabled = true;
+            option.textContent = '-- No matching timeboxes --';
+            selectElement.appendChild(option);
+        }
+    }
+
+    function populateTimeboxSelect(selectElement, timeboxes) {
+        // Store the timeboxes for filtering if this is the first load
+        if (timeboxes && timeboxes.Assets && (!allTimeboxes || !allTimeboxes.Assets)) {
+            allTimeboxes = timeboxes;
+            populateFilterDropdowns(timeboxes);
+        }
+        
+        // Get appropriate filter values
+        let ownerFilter = '';
+        let scheduleFilter = '';
+        
+        if (selectElement === sourceTimeboxSelect) {
+            ownerFilter = sourceOwnerFilterSelect.value;
+            scheduleFilter = sourceScheduleFilterSelect.value;
+        } else if (selectElement === targetTimeboxSelect) {
+            ownerFilter = targetOwnerFilterSelect.value;
+            scheduleFilter = targetScheduleFilterSelect.value;
+        }
+        
+        filterTimeboxes(selectElement, ownerFilter, scheduleFilter);
     }
 
     // --- Core Logic Functions (Placeholders) ---
@@ -332,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showStatus('Fetching timeboxes...');
         // Fetch only active timeboxes - ADDED BeginDate, EndDate, Owner.Name, Schedule.Name to sel
         const timeboxSelectFields = 'Name,BeginDate,EndDate,Owner.Name,Schedule.Name';
-        const timeboxes = await v1ApiCall(`rest-1.v1/Data/Timebox?sel=${timeboxSelectFields}&where=AssetState='64'`);
+        const timeboxes = await v1ApiCall(`rest-1.v1/Data/Timebox?sel=${timeboxSelectFields}`);
         if (timeboxes) {
             populateTimeboxSelect(sourceTimeboxSelect, timeboxes);
             populateTimeboxSelect(targetTimeboxSelect, timeboxes);
@@ -357,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Construct the query
         // Fetch Stories (PrimaryWorkitem) first
-        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task.(Name,Description)&where=Timebox.ID='${timeboxId}'`;
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Description&where=Timebox.ID='${timeboxId}'`;
         const storyResponse = await v1ApiCall(storyQuery);
         if (!storyResponse || !storyResponse.Assets) {
             showStatus('No stories found or error fetching stories.', true);
@@ -451,6 +670,26 @@ document.addEventListener('DOMContentLoaded', () => {
         showStatus(`Starting copy of ${storiesToCopy.length} stories...`);
         copyButton.disabled = true; // Disable button during copy
 
+        // Get target timebox scope
+        let targetTimeboxScope = null;
+        try {
+            showStatus('Fetching target timebox scope information...');
+            // Query to get the scope of the target timebox
+            const timeboxQuery = `rest-1.v1/Data/Timebox/${targetTimeboxId.split(':')[1]}?sel=Scope.ID`;
+            const timeboxData = await v1ApiCall(timeboxQuery);
+            
+            if (timeboxData && timeboxData.Attributes && timeboxData.Attributes['Scope.ID'] && 
+                timeboxData.Attributes['Scope.ID'].value) {
+                targetTimeboxScope = timeboxData.Attributes['Scope.ID'].value;
+                showStatus(`Target timebox scope identified: ${targetTimeboxScope}`);
+            } else {
+                showStatus('Could not determine the scope of the target timebox. Copy may fail.', true);
+            }
+        } catch (error) {
+            console.error('Error fetching target timebox scope:', error);
+            showStatus('Error fetching target timebox scope. Copy may fail.', true);
+        }
+
         let successCount = 0;
         let errorCount = 0;
         let skippedCount = 0;
@@ -476,6 +715,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // --- Determine Super ID to use ---
                 let superIdToUse = null;
+                let skipSuperAttribute = false;
+                
                 if (targetParentId) {
                     // User selected a target parent
                     superIdToUse = targetParentId;
@@ -484,15 +725,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (sourceAttributes.Super && sourceAttributes.Super.value && sourceAttributes.Super.value.idref) {
                         superIdToUse = sourceAttributes.Super.value.idref;
                     } else {
-                        // Source parent is null/missing, AND no target selected. Cannot copy.
-                        console.warn(`Skipping story ${storyOid}: Target Parent not selected and original story has no Parent ('Super'). 'Super' is required.`);
-                        showStatus(`Skipping story ${storyOid}: Missing required Parent.`, true); // Show status briefly
-                        skippedCount++;
-                        continue; // Skip to the next story
+                        // Parent is completely optional now, so we'll skip setting it
+                        skipSuperAttribute = true;
                     }
                 }
                 // --- End Determine Super ID ---
-
 
                 // 2. Prepare data for the new story
                 const newStoryPayload = {
@@ -500,23 +737,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Required fields
                         Name: { value: `Copy of ${sourceAttributes.Name?.value || 'Unnamed Story'}`, act: 'set' },
                         Timebox: { value: targetTimeboxId, act: 'set' },
-                        Super: { value: superIdToUse, act: 'set' }, // Set Super based on logic above
+                        
+                        // Only include Super if we have a value for it
+                        ...(!skipSuperAttribute && superIdToUse && { Super: { value: superIdToUse, act: 'set' } }),
+
+                        // Use target timebox scope if available, otherwise try to use original scope
+                        ...(targetTimeboxScope ? 
+                            { Scope: { value: targetTimeboxScope, act: 'set' } } : 
+                            (sourceAttributes.Scope && sourceAttributes.Scope.value && 
+                             { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } })
+                        ),
 
                         // Add other attributes only if they exist in the source response
                         ...(sourceAttributes.Description && { Description: { value: sourceAttributes.Description.value, act: 'set' } }),
-                        ...(sourceAttributes.Scope && sourceAttributes.Scope.value && { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } }),
                         ...(sourceAttributes.Priority && sourceAttributes.Priority.value && { Priority: { value: sourceAttributes.Priority.value.idref, act: 'set' } }),
                         ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
                         ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
-                        // Order removed previously
-
+                        
                         // Add back multi-value relations with strict checks
-                        // Owners removed previously for debugging
                         ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
                             AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
                         }),
-                        ...(sourceAttributes.Super && sourceAttributes.Super.value && { Super: { value: sourceAttributes.Super.value.idref, act: 'set' } }),
-                        // --- Add back multi-value relations with strict checks --- 
+                        
                         // --- Restore Owners --- 
                         ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && { 
                             Owners: { value: sourceAttributes.Owners.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' } 
@@ -646,7 +888,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- New Function to Populate Parent Select ---
     function populateParentSelect(selectElement, parents) {
-        selectElement.innerHTML = '<option value="">-- Select Target Parent (Required) --</option>'; // Clear existing options
+        selectElement.innerHTML = '<option value="">-- Select Target Parent (Optional) --</option>'; // Changed to Optional
         if (parents && parents.Assets) {
             parents.Assets.sort((a, b) => {
                 const nameA = a.Attributes?.Name?.value || '';
@@ -676,6 +918,39 @@ document.addEventListener('DOMContentLoaded', () => {
     targetTimeboxSelect.addEventListener('change', checkCopyButtonState);
     targetParentSelect.addEventListener('change', checkCopyButtonState);
 
+    // Add filter event listeners
+    sourceOwnerFilterSelect.addEventListener('change', () => {
+        sourceOwnerFilterSelect.dataset.lastChanged = 'true';
+        populateFilterDropdowns(allTimeboxes, false);
+        populateTimeboxSelect(sourceTimeboxSelect, allTimeboxes);
+        // Clear any selected stories when filter changes
+        storiesListDiv.innerHTML = '<p>Select a timebox and click "Load Stories".</p>';
+        copyButton.disabled = true;
+    });
+    
+    sourceScheduleFilterSelect.addEventListener('change', () => {
+        sourceScheduleFilterSelect.dataset.lastChanged = 'true';
+        populateFilterDropdowns(allTimeboxes, false);
+        populateTimeboxSelect(sourceTimeboxSelect, allTimeboxes);
+        // Clear any selected stories when filter changes
+        storiesListDiv.innerHTML = '<p>Select a timebox and click "Load Stories".</p>';
+        copyButton.disabled = true;
+    });
+    
+    targetOwnerFilterSelect.addEventListener('change', () => {
+        targetOwnerFilterSelect.dataset.lastChanged = 'true';
+        populateFilterDropdowns(allTimeboxes, false);
+        populateTimeboxSelect(targetTimeboxSelect, allTimeboxes);
+        checkCopyButtonState();
+    });
+    
+    targetScheduleFilterSelect.addEventListener('change', () => {
+        targetScheduleFilterSelect.dataset.lastChanged = 'true';
+        populateFilterDropdowns(allTimeboxes, false);
+        populateTimeboxSelect(targetTimeboxSelect, allTimeboxes);
+        checkCopyButtonState();
+    });
+
     // Add this new function to handle parallel loading with timeout
     async function loadInitialData() {
         showStatus('Loading data, please wait...', false);
@@ -701,4 +976,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initial Load ---
     loadSettings();
-}); 
+});
