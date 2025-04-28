@@ -92,8 +92,23 @@ app.use((req, res, next) => {
 
 // Function to intelligently determine proxy configuration
 function getProxyConfiguration(targetUrl) {
-  const proxyEnv = process.env.HTTPS_PROXY || process.env.https_proxy || 
-                   process.env.HTTP_PROXY || process.env.http_proxy;
+  // Check for protocol-specific proxy environment variables first
+  // If target is https, prefer HTTPS_PROXY, otherwise prefer HTTP_PROXY
+  const isTargetHttps = targetUrl.startsWith('https:');
+  
+  console.log(`[App Proxy] Target URL protocol: ${isTargetHttps ? 'HTTPS' : 'HTTP'}`);
+  
+  // Select the appropriate proxy environment variable based on target protocol
+  let proxyEnv;
+  if (isTargetHttps) {
+    proxyEnv = process.env.HTTPS_PROXY || process.env.https_proxy || 
+               process.env.HTTP_PROXY || process.env.http_proxy;
+    console.log(`[App Proxy] Looking for HTTPS proxy first because target is HTTPS`);
+  } else {
+    proxyEnv = process.env.HTTP_PROXY || process.env.http_proxy || 
+               process.env.HTTPS_PROXY || process.env.https_proxy;
+    console.log(`[App Proxy] Looking for HTTP proxy first because target is HTTP`);
+  }
   
   if (!proxyEnv) {
     console.log('[App Proxy] No proxy environment variables detected.');
@@ -103,13 +118,29 @@ function getProxyConfiguration(targetUrl) {
   try {
     // Extract proxy URL and parse it
     console.log(`[App Proxy] Detected proxy environment variable: ${proxyEnv}`);
-    const proxyUrl = new URL(proxyEnv);
+    
+    // Ensure URL has a protocol
+    let proxyUrlString = proxyEnv;
+    if (!proxyUrlString.includes('://')) {
+      // Add default protocol if missing
+      proxyUrlString = `http://${proxyUrlString}`;
+      console.log(`[App Proxy] Added missing protocol to proxy URL: ${proxyUrlString}`);
+    }
+    
+    const proxyUrl = new URL(proxyUrlString);
+    
+    // Validate protocol - ensure it ends with a colon
+    let protocol = proxyUrl.protocol;
+    if (!protocol.endsWith(':')) {
+      protocol = `${protocol}:`;
+      console.log(`[App Proxy] Fixed protocol format: ${protocol}`);
+    }
     
     // Parse into object format that axios expects
     const proxyConfig = {
       host: proxyUrl.hostname,
-      port: proxyUrl.port || (proxyUrl.protocol === 'https:' ? 443 : 80),
-      protocol: proxyUrl.protocol
+      port: parseInt(proxyUrl.port) || (protocol === 'https:' ? 443 : 80),
+      protocol: protocol
     };
     
     // Add auth if present in proxy URL
@@ -121,12 +152,19 @@ function getProxyConfiguration(targetUrl) {
       console.log(`[App Proxy] Using proxy authentication for user: ${proxyUrl.username}`);
     }
     
-    console.log(`[App Proxy] Constructed proxy configuration: ${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyConfig.port}`);
+    console.log(`[App Proxy] Constructed proxy configuration:`);
+    console.log(`  Protocol: ${proxyConfig.protocol}`);
+    console.log(`  Host: ${proxyConfig.host}`);
+    console.log(`  Port: ${proxyConfig.port}`);
+    
     return proxyConfig;
   } catch (e) {
     console.error(`[App Proxy] Error parsing proxy URL (${proxyEnv}):`, e.message);
-    console.log('[App Proxy] Falling back to environment variable-based proxy');
-    return undefined; // Let axios use the env vars directly
+    console.log('[App Proxy] Attempting to use proxy string directly');
+    
+    // As a fallback, just use the string directly instead of parsing it
+    // This relies on axios's internal proxy handling
+    return proxyEnv;
   }
 }
 
