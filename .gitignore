@@ -1,5 +1,4 @@
-# Node.js dependencies
-node_modules/
+
 
 # Optional Log files
 npm-debug.log*
