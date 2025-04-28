@@ -34,11 +34,18 @@ customAxios.interceptors.request.use(request => {
   console.log('[Axios Interceptor] Request URL:', request.url);
   console.log('[Axios Interceptor] Request Method:', request.method);
   console.log('[Axios Interceptor] Request Headers:', JSON.stringify(request.headers, null, 2));
+  
+  // Enhanced proxy logging
   if (request.proxy === false) {
-    console.log('[Axios Interceptor] Proxy explicitly disabled');
+    console.log('[Axios Interceptor] Proxy usage: EXPLICITLY DISABLED via proxy: false');
   } else if (request.proxy) {
-    console.log('[Axios Interceptor] Proxy Configuration:', JSON.stringify(request.proxy, null, 2));
+    console.log('[Axios Interceptor] Proxy configuration:', JSON.stringify(request.proxy, null, 2));
+  } else {
+    console.log('[Axios Interceptor] Proxy usage: Using system environment variables');
+    console.log(`[Axios Interceptor] - HTTPS_PROXY: ${process.env.HTTPS_PROXY || process.env.https_proxy || 'Not set'}`);
+    console.log(`[Axios Interceptor] - HTTP_PROXY: ${process.env.HTTP_PROXY || process.env.http_proxy || 'Not set'}`);
   }
+  
   return request;
 });
 
@@ -82,6 +89,46 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Function to intelligently determine proxy configuration
+function getProxyConfiguration(targetUrl) {
+  const proxyEnv = process.env.HTTPS_PROXY || process.env.https_proxy || 
+                   process.env.HTTP_PROXY || process.env.http_proxy;
+  
+  if (!proxyEnv) {
+    console.log('[App Proxy] No proxy environment variables detected.');
+    return undefined; // No proxy config - use direct connection
+  }
+
+  try {
+    // Extract proxy URL and parse it
+    console.log(`[App Proxy] Detected proxy environment variable: ${proxyEnv}`);
+    const proxyUrl = new URL(proxyEnv);
+    
+    // Parse into object format that axios expects
+    const proxyConfig = {
+      host: proxyUrl.hostname,
+      port: proxyUrl.port || (proxyUrl.protocol === 'https:' ? 443 : 80),
+      protocol: proxyUrl.protocol
+    };
+    
+    // Add auth if present in proxy URL
+    if (proxyUrl.username) {
+      proxyConfig.auth = {
+        username: proxyUrl.username,
+        password: proxyUrl.password || ''
+      };
+      console.log(`[App Proxy] Using proxy authentication for user: ${proxyUrl.username}`);
+    }
+    
+    console.log(`[App Proxy] Constructed proxy configuration: ${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyConfig.port}`);
+    return proxyConfig;
+  } catch (e) {
+    console.error(`[App Proxy] Error parsing proxy URL (${proxyEnv}):`, e.message);
+    console.log('[App Proxy] Falling back to environment variable-based proxy');
+    return undefined; // Let axios use the env vars directly
+  }
+}
 
 // --- Revert back to defining proxy route directly on app --- 
 // --- Try using a RegExp route definition ---
@@ -131,6 +178,20 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             throw new Error(`Invalid target URL: ${urlError.message}`);
         }
 
+        // Get the proxy configuration - undefined means use env vars
+        // Check if we should bypass proxy with a query param for debugging
+        const shouldUseProxy = req.query.direct !== 'true';
+        
+        // Determine proxy configuration
+        let proxyConfig;
+        if (!shouldUseProxy) {
+            console.log('[App Proxy] Proxy BYPASS requested via query parameter');
+            proxyConfig = false; // Explicitly disable
+        } else {
+            proxyConfig = getProxyConfiguration(targetUrl);
+            // If undefined, axios uses env vars automatically
+        }
+
         // Configure axios request
         const axiosConfig = {
             method: req.method,
@@ -145,8 +206,8 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             validateStatus: function (status) {
                 return status >= 200 && status < 600;
             },
-            // Explicitly bypass proxy for this request
-            proxy: false
+            // Set proxy configuration intelligently
+            ...(proxyConfig !== undefined && { proxy: proxyConfig })
         };
 
         console.log('[App Proxy] Outgoing request configuration:');
@@ -157,7 +218,15 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
           console.log(`    ${key}: ${key.toLowerCase() === 'authorization' ? axiosConfig.headers[key].substring(0, 15) + '...' : axiosConfig.headers[key]}`);
         });
         console.log(`  HTTPS Agent applied: ${!!axiosConfig.httpsAgent}`);
-        console.log(`  Proxy explicitly bypassed: ${axiosConfig.proxy === false}`);
+        
+        // Enhanced proxy logging
+        if (axiosConfig.proxy === false) {
+            console.log('  Proxy: EXPLICITLY DISABLED');
+        } else if (axiosConfig.proxy) {
+            console.log('  Proxy: EXPLICIT CONFIG', JSON.stringify(axiosConfig.proxy, null, 2));
+        } else {
+            console.log('  Proxy: Using system environment variables (if any)');
+        }
         
         if (axiosConfig.data) {
           console.log('  Request data:', JSON.stringify(axiosConfig.data, null, 2));
@@ -302,7 +371,8 @@ app.listen(port, () => {
     console.log('\n[App Startup] Network Configuration:');
     if (process.env.HTTPS_PROXY || process.env.https_proxy) {
         console.log(`[App Startup] HTTPS_PROXY: ${process.env.HTTPS_PROXY || process.env.https_proxy}`);
-        console.log('[App Startup] Note: Proxy is explicitly bypassed in request config');
+        console.log('[App Startup] Proxy handling: Intelligently configured based on request');
+        console.log('[App Startup] Use ?direct=true query param to bypass proxy for debugging');
     } else {
         console.log('[App Startup] No HTTPS_PROXY environment variable detected.');
     }
