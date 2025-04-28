@@ -37,6 +37,10 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
 
     // --- Restore Agent Config: Env Var Proxy with Auth > Direct --- 
     let fetchAgent = null;
+    // --- Log the environment variables Node.js sees --- 
+    console.log(`[App Proxy] Checking env vars: process.env.HTTPS_PROXY = ${process.env.HTTPS_PROXY}`);
+    console.log(`[App Proxy] Checking env vars: process.env.https_proxy = ${process.env.https_proxy}`);
+    // --- End Log ---
     const proxyEnvVar = process.env.HTTPS_PROXY || process.env.https_proxy; // Check Env Var
     let decodedUser = null;
     let decodedPass = null;
@@ -53,8 +57,10 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         }
     }
 
-    // --- Create Agent based ONLY on Env Var Proxy --- 
+    // --- Create Agent based on Env Var Proxy (or direct) --- 
     if (proxyEnvVar) {
+        // <<< Log Entry into block >>>
+        console.log("[App Proxy] Entered 'if (proxyEnvVar)' block. Value:", proxyEnvVar);
         let effectiveProxyUrl = proxyEnvVar;
         // If Basic Auth creds were decoded, inject them into the proxy URL
         if (decodedUser && decodedPass) {
