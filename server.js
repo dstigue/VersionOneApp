@@ -1,15 +1,28 @@
+console.log('[Debug] Script start');
+
 const express = require('express');
+console.log('[Debug] Loaded express');
 const path = require('path');
+console.log('[Debug] Loaded path');
 const https = require('https');
+console.log('[Debug] Loaded https');
 const axios = require('axios');
+console.log('[Debug] Loaded axios');
+const axiosNtlm = require('axios-ntlm');
+console.log('[Debug] Loaded axios-ntlm');
 const { URL } = require('url');
+console.log('[Debug] Loaded url.URL');
 const { parse: parseUrl } = require('url');
+console.log('[Debug] Loaded url.parse');
 
 // Disable certificate validation globally
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+console.log('[Debug] Set NODE_TLS_REJECT_UNAUTHORIZED');
 
 const app = express();
+console.log('[Debug] Initialized express app');
 const port = process.env.PORT || 3000;
+console.log('[Debug] Determined port');
 
 // Log all environment variables related to proxies
 console.log('[App Startup] Proxy environment variables:');
@@ -17,57 +30,27 @@ console.log(`  HTTPS_PROXY: ${process.env.HTTPS_PROXY || process.env.https_proxy
 console.log(`  HTTP_PROXY: ${process.env.HTTP_PROXY || process.env.http_proxy || 'Not set'}`);
 console.log(`  NO_PROXY: ${process.env.NO_PROXY || process.env.no_proxy || 'Not set'}`);
 
-// Create a custom axios instance with certificate validation disabled
-const customAxios = axios.create({
-  httpsAgent: new https.Agent({  
-    rejectUnauthorized: false,
-    secureOptions: require('constants').SSL_OP_LEGACY_SERVER_CONNECT,
-    checkServerIdentity: () => undefined,
-    keepAlive: true,
-    keepAliveMsecs: 3000
-  })
-});
-
-// Log axios interceptors for debugging
-customAxios.interceptors.request.use(request => {
-  console.log('[Axios Interceptor] Request URL:', request.url);
-  console.log('[Axios Interceptor] Request Method:', request.method);
-  console.log('[Axios Interceptor] Request Headers:', JSON.stringify(request.headers, null, 2));
-  return request;
-});
-
-// Log response interceptor
-customAxios.interceptors.response.use(
-  response => {
-    console.log('[Axios Interceptor] Response Status:', response.status);
-    console.log('[Axios Interceptor] Response Headers:', JSON.stringify(response.headers, null, 2));
-    return response;
-  },
-  error => {
-    console.error('[Axios Interceptor] Error:', error.message);
-    if (error.response) {
-      console.error('[Axios Interceptor] Error Response Status:', error.response.status);
-      console.error('[Axios Interceptor] Error Response Headers:', JSON.stringify(error.response.headers, null, 2));
-    }
-    return Promise.reject(error);
-  }
-);
-
 // Middleware to parse JSON bodies 
+console.log('[Debug] Setting up express.json middleware...');
 app.use(express.json());
+console.log('[Debug] express.json middleware set.');
 
 // Serve static files from the current directory
+console.log('[Debug] Setting up express.static middleware...');
 app.use(express.static(path.join(__dirname, '.')));
+console.log('[Debug] express.static middleware set.');
 
 // Add a middleware to log raw requests
+console.log('[Debug] Setting up request logger middleware...');
 app.use((req, res, next) => {
   console.log('\n[Request Logger] ---- New Request ----');
   console.log(`[Request Logger] ${req.method} ${req.url}`);
   console.log('[Request Logger] Headers:', JSON.stringify(req.headers, null, 2));
   next();
 });
+console.log('[Debug] Request logger middleware set.');
 
-// Extract credentials from proxy URL
+// Extract credentials from proxy URL, potentially including domain
 function extractProxyCredentials() {
     const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
     if (!proxyUrl) return null;
@@ -76,33 +59,28 @@ function extractProxyCredentials() {
         const parsedUrl = parseUrl(proxyUrl);
         if (!parsedUrl.auth) return null;
         
-        const [username, password] = parsedUrl.auth.split(':');
-        if (!username) return null;
+        const [rawUsername, rawPassword] = parsedUrl.auth.split(':');
+        if (!rawUsername) return null;
+
+        const username = decodeURIComponent(rawUsername);
+        const password = decodeURIComponent(rawPassword || '');
+
+        // Separate domain if present (DOMAIN\\user or user@DOMAIN)
+        let domain = '';
+        let user = username;
+        if (username.includes('\\')) {
+            [domain, user] = username.split('\\');
+        } else if (username.includes('@')) {
+            [user, domain] = username.split('@'); // Less common for NTLM, but handle it
+        }
         
         return {
-            username: decodeURIComponent(username),
-            password: decodeURIComponent(password || '')
+            username: user,
+            password: password,
+            domain: domain || '' // Provide domain if found
         };
     } catch (e) {
         console.error('[Proxy Auth] Error extracting credentials:', e.message);
-        return null;
-    }
-}
-
-// Extract host and port from proxy URL
-function extractProxyHostInfo() {
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
-    if (!proxyUrl) return null;
-    
-    try {
-        const parsedUrl = parseUrl(proxyUrl);
-        return {
-            host: parsedUrl.hostname,
-            port: parseInt(parsedUrl.port || 80),
-            protocol: parsedUrl.protocol || 'http:'
-        };
-    } catch (e) {
-        console.error('[Proxy Host] Error extracting host info:', e.message);
         return null;
     }
 }
@@ -127,71 +105,59 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     const targetUrl = `${v1BaseUrl.replace(/\/$/, '')}/${actualApiPath}${queryParams ? '?' + queryParams : ''}`;
     console.log(`[App Proxy] Full target URL: ${targetUrl}`);
     
+    let apiResponse;
+
     try {
-        // Extract proxy info
-        const proxyCredentials = extractProxyCredentials();
-        const proxyInfo = extractProxyHostInfo();
+        // Attempt to extract NTLM credentials
+        const ntlmCredentials = extractProxyCredentials();
         
-        if (!proxyInfo) {
-            throw new Error('No proxy configuration found in environment variables');
-        }
-        
-        console.log(`[App Proxy] Proxy host: ${proxyInfo.host}:${proxyInfo.port}`);
-        console.log(`[App Proxy] Proxy credentials: ${proxyCredentials ? 'Present' : 'Not found'}`);
-        
-        // Create explicit proxy configuration
-        const proxyConfig = {
-            host: proxyInfo.host,
-            port: proxyInfo.port,
-            protocol: proxyInfo.protocol.replace(':', '')
-        };
-        
-        if (proxyCredentials) {
-            proxyConfig.auth = proxyCredentials;
-        }
-        
-        // Configure axios request with explicit proxy settings
-        const axiosConfig = {
+        // Base axios config (common parts)
+        const baseAxiosConfig = {
             method: req.method,
             url: targetUrl,
             headers: {
                 'Authorization': v1AuthHeader,
                 'Accept': 'application/json',
                 ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] }),
-                // Add important headers for proxy authentication
-                'Connection': 'keep-alive',
-                'Proxy-Connection': 'keep-alive'
             },
             ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
-            // Use a fresh agent each time for NTLM
-            httpsAgent: new https.Agent({
-                rejectUnauthorized: false,
-                secureOptions: require('constants').SSL_OP_LEGACY_SERVER_CONNECT,
-                checkServerIdentity: () => undefined,
-                keepAlive: true
-            }),
             validateStatus: function (status) {
-                return status >= 200 && status < 600;
+                return status >= 200 && status < 600; 
             },
-            // Explicitly set proxy configuration instead of using environment variables
-            proxy: proxyConfig,
-            // Other settings
-            timeout: 30000,
-            maxRedirects: 0
+            timeout: 30000, 
+            maxRedirects: 0,
+            httpsAgent: new https.Agent({  
+                rejectUnauthorized: false, 
+                keepAlive: true,
+            })
         };
 
-        console.log('[App Proxy] Making request with explicit proxy configuration');
-        console.log(`[App Proxy] Proxy config: ${JSON.stringify({
-            ...proxyConfig,
-            auth: proxyCredentials ? '(credentials provided)' : undefined
-        })}`);
+        if (ntlmCredentials) {
+            // ---> Use NTLM Proxy via axios-ntlm
+            console.log(`[App Proxy] Using NTLM proxy credentials: username='${ntlmCredentials.username}', domain='${ntlmCredentials.domain || '(none)'}'`);
+
+            const ntlmAxiosConfig = {
+                ...baseAxiosConfig,
+                ...ntlmCredentials, // Add NTLM credentials
+            };
+
+            console.log('[App Proxy] Making request via axios-ntlm (proxy)');
+            apiResponse = await axiosNtlm(ntlmAxiosConfig);
+
+        } else {
+            // ---> No Proxy or invalid credentials - Attempt Direct Connection via standard axios
+            console.warn('[App Proxy] NTLM proxy credentials not found or incomplete in HTTPS_PROXY. Attempting direct connection...');
+            
+            // Use baseAxiosConfig directly, no proxy/NTLM details needed
+            const directAxiosConfig = { ...baseAxiosConfig }; 
+
+            console.log('[App Proxy] Making request via standard axios (direct)');
+            apiResponse = await axios(directAxiosConfig); 
+        }
         
-        // Make the request
-        const apiResponse = await axios(axiosConfig);
-        
+        // Common response handling
         console.log(`[App Proxy] Response received with status: ${apiResponse.status}`);
         
-        // Forward response headers and status
         if (apiResponse.headers) {
             Object.entries(apiResponse.headers).forEach(([key, value]) => {
                 if (key.toLowerCase() !== 'transfer-encoding') {
@@ -199,49 +165,63 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
                 }
             });
         }
-
         res.status(apiResponse.status).send(apiResponse.data);
 
     } catch (error) {
-        // Log detailed error information for proxy auth issues
-        if (error.response && error.response.status === 401) {
-            console.error('\n[App Proxy] ---- PROXY AUTHENTICATION ERROR (401) ----');
-            console.error('[App Proxy] The proxy server rejected the authentication attempt');
-            console.error('[App Proxy] Headers received:', JSON.stringify(error.response.headers, null, 2));
-            
-            // Check for specific authentication headers
-            const wwwAuth = error.response.headers['www-authenticate'] || error.response.headers['proxy-authenticate'];
-            if (wwwAuth) {
-                console.error(`[App Proxy] Authentication header: ${wwwAuth}`);
-                
-                if (wwwAuth.includes('NTLM')) {
-                    console.error('[App Proxy] NTLM authentication detected but failed');
-                    console.error('[App Proxy] This likely means:');
-                    console.error('  1. The username/password in HTTPS_PROXY is incorrect');
-                    console.error('  2. The NTLM handshake is not completing properly');
-                    console.error('  3. The proxy server requires additional domain information');
-                }
-            }
-            
-            // Suggest checking for domain in username
-            const proxyCredentials = extractProxyCredentials();
-            if (proxyCredentials && !proxyCredentials.username.includes('\\') && !proxyCredentials.username.includes('@')) {
-                console.error('[App Proxy] NOTE: For NTLM authentication, you may need to include the domain:');
-                console.error('  - Format should be: DOMAIN\\username or username@DOMAIN');
-                console.error('  - Current username format does not include domain information');
-            }
-        }
-        
+        // Error handling remains largely the same, but context might differ (proxy vs direct)
         console.error('\n[App Proxy] ---- ERROR OCCURRED ----');
         console.error(`[App Proxy] Error message: ${error.message}`);
-        
+
         if (error.code) {
             console.error(`[App Proxy] Error code: ${error.code}`);
         }
-        
+
+        // Check for 407 specifically for proxy errors
+        if (error.response && error.response.status === 407) { 
+            console.error('\n[App Proxy] ---- PROXY AUTHENTICATION ERROR (407) ----');
+            console.error('[App Proxy] The proxy server requires authentication and it failed.');
+            // Check for specific authentication headers
+            const proxyAuth = error.response.headers['proxy-authenticate']; // Check this header
+            if (proxyAuth) {
+                console.error(`[App Proxy] Proxy-Authenticate header: ${proxyAuth}`);
+                
+                if (proxyAuth.includes('NTLM')) {
+                    console.error('[App Proxy] NTLM authentication detected but failed');
+                    console.error('[App Proxy] This likely means:');
+                    console.error('  1. The username/password/domain in HTTPS_PROXY is incorrect');
+                    console.error('  2. The NTLM handshake failed for other reasons');
+                } else if (proxyAuth.includes('Basic')) {
+                     console.error('[App Proxy] Basic authentication detected but failed. Check username/password.');
+                } else if (proxyAuth.includes('Digest')) {
+                     console.error('[App Proxy] Digest authentication detected but failed. Check username/password.');
+                }
+            }
+            
+            // Suggest checking format again
+            const proxyCredentials = extractProxyCredentials(); // Re-extract to log
+             if (proxyCredentials) {
+                console.error(`[App Proxy] Credentials used: username='${proxyCredentials.username}', domain='${proxyCredentials.domain || '(none)'}'`);
+                 if (!proxyCredentials.domain && proxyAuth && proxyAuth.includes('NTLM')) {
+                     console.error('[App Proxy] NOTE: NTLM usually requires a domain. Ensure HTTPS_PROXY format is like:');
+                     console.error('  - http://DOMAIN\\username:password@proxy.host:port');
+                     console.error('  - http://username@DOMAIN:password@proxy.host:port'); // Less common but possible
+                 }
+            }
+        }
+        // Handle 401 for target server auth issues
+        else if (error.response && error.response.status === 401) {
+             console.error('\n[App Proxy] ---- TARGET SERVER AUTHENTICATION ERROR (401) ----');
+             console.error('[App Proxy] The target API server rejected the request (Authorization header)');
+             console.error('[App Proxy] Headers received:', JSON.stringify(error.response.headers, null, 2));
+        }
+
+        // Generic error response sending
         if (error.response) {
-            console.error(`[App Proxy] Response status: ${error.response.status}`);
-            console.error('[App Proxy] Response headers:', JSON.stringify(error.response.headers, null, 2));
+            console.error('[App Proxy] Response status:', error.response.status);
+            // Don't log full headers again if already logged above
+            if (error.response.status !== 407 && error.response.status !== 401) {
+                console.error('[App Proxy] Response headers:', JSON.stringify(error.response.headers, null, 2));
+            }
             
             res.status(error.response.status).json({
                 error: `API Error: ${error.response.status}`,
@@ -249,27 +229,22 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
                 details: error.response.data
             });
         } else {
-            console.error('[App Proxy] Error details:', error);
+            // Network errors, DNS issues, etc. (could be proxy or direct connection related)
+             console.error('[App Proxy] Error details:', error);
             
-            res.status(500).json({
-                error: 'Proxy Connection Error',
-                message: error.message,
-                code: error.code
-            });
+             res.status(500).json({
+                 error: 'Connection Error', // More generic now
+                 message: error.message,
+                 code: error.code
+             });
         }
     }
 });
 
 // Start server
+console.log('[Debug] About to call app.listen...');
 app.listen(port, () => {
+    console.log('[Debug] app.listen callback entered.');
     console.log('\n[App Startup] ---- Server Initialized ----');
-    console.log(`[App Startup] Server listening at http://localhost:${port}`);
-    console.log('[App Startup] Serving static files from:', path.join(__dirname, '.'));
-    console.log('[App Startup] TLS/SSL Configuration:');
-    console.log('[App Startup] - NODE_TLS_REJECT_UNAUTHORIZED=0 (global setting)');
-    console.log('[App Startup] - HTTPS Agent with rejectUnauthorized=false');
-    
-    console.log('\n[App Startup] Network Configuration:');
-    console.log(`[App Startup] Node.js version: ${process.version}`);
-    console.log(`[App Startup] Platform: ${process.platform}`);
-}); 
+    console.log(`[Debug] Server running on port ${port}`);
+});
