@@ -136,31 +136,51 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             // ---> Use NTLM Proxy via axios-ntlm
             console.log(`[App Proxy] Using NTLM proxy credentials: username='${ntlmCredentials.username}', domain='${ntlmCredentials.domain || '(none)'}'`);
             
-            // Create an NTLM client instance with credentials
             const ntlmClient = NtlmClient(ntlmCredentials);
 
-            // Prepare the config for the client call (similar to baseAxiosConfig but without NTLM creds inside)
             const ntlmAxiosConfig = {
                 method: req.method,
                 url: targetUrl,
-                headers: baseAxiosConfig.headers, // Reuse headers from base config
+                headers: baseAxiosConfig.headers, 
                 ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
                 validateStatus: baseAxiosConfig.validateStatus,
                 timeout: baseAxiosConfig.timeout,
                 maxRedirects: baseAxiosConfig.maxRedirects,
-                httpsAgent: baseAxiosConfig.httpsAgent // Reuse agent from base config
+                httpsAgent: baseAxiosConfig.httpsAgent 
             };
 
+            // <<< Log detailed NTLM request config >>>
+            console.log('[App Proxy] NTLM Request Config:', JSON.stringify({
+                method: ntlmAxiosConfig.method,
+                url: ntlmAxiosConfig.url,
+                headers: ntlmAxiosConfig.headers,
+                data: ntlmAxiosConfig.data ? (typeof ntlmAxiosConfig.data === 'object' ? '[Object]' : '[Data Present]') : '[No Data]',
+                timeout: ntlmAxiosConfig.timeout,
+                maxRedirects: ntlmAxiosConfig.maxRedirects,
+                httpsAgent_keepAlive: ntlmAxiosConfig.httpsAgent?.options?.keepAlive,
+                httpsAgent_rejectUnauthorized: ntlmAxiosConfig.httpsAgent?.options?.rejectUnauthorized,
+            }, null, 2));
+
             console.log('[App Proxy] Making request via NTLM client (proxy)');
-            // Call the NTLM client instance with the config
             apiResponse = await ntlmClient(ntlmAxiosConfig);
 
         } else {
             // ---> No Proxy or invalid credentials - Attempt Direct Connection via standard axios
             console.warn('[App Proxy] NTLM proxy credentials not found or incomplete in HTTPS_PROXY. Attempting direct connection...');
             
-            // Use baseAxiosConfig directly, no proxy/NTLM details needed
             const directAxiosConfig = { ...baseAxiosConfig }; 
+
+            // <<< Log detailed Direct request config >>>
+            console.log('[App Proxy] Direct Request Config:', JSON.stringify({
+                method: directAxiosConfig.method,
+                url: directAxiosConfig.url,
+                headers: directAxiosConfig.headers,
+                data: directAxiosConfig.data ? (typeof directAxiosConfig.data === 'object' ? '[Object]' : '[Data Present]') : '[No Data]',
+                timeout: directAxiosConfig.timeout,
+                maxRedirects: directAxiosConfig.maxRedirects,
+                httpsAgent_keepAlive: directAxiosConfig.httpsAgent?.options?.keepAlive,
+                httpsAgent_rejectUnauthorized: directAxiosConfig.httpsAgent?.options?.rejectUnauthorized,
+            }, null, 2));
 
             console.log('[App Proxy] Making request via standard axios (direct)');
             apiResponse = await axios(directAxiosConfig); 
