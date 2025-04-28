@@ -141,7 +141,6 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             method: req.method,
             url: targetUrl,
             headers: {
-                'Authorization': v1AuthHeader,
                 'Accept': 'application/json',
                 ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] }),
             },
