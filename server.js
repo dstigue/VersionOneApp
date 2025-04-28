@@ -4,7 +4,8 @@ const path = require('path');
 const https = require('https'); // Require https module
 // const { HttpsProxyAgent } = require('https-proxy-agent'); // <<< Remove
 const { URL } = require('url'); // <<< Add back
-const ProxyAgent = require('proxy-agent').default; // <<< Try accessing .default
+const ProxyAgentModule = require('proxy-agent'); // <<< Import the module
+const ProxyAgent = ProxyAgentModule.default || ProxyAgentModule; // <<< Use .default if it exists, otherwise use the module itself
 // const { PacProxyAgent } = require('pac-proxy-agent'); // TEMP remove
 
 const app = express();
