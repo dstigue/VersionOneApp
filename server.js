@@ -1,36 +1,41 @@
 const express = require('express');
-const fetch = require('node-fetch'); // Use require for node-fetch v2
+// const fetch = require('node-fetch'); // TEMP remove
 const path = require('path');
 const https = require('https'); // Require https module
 const { HttpsProxyAgent } = require('https-proxy-agent'); // <<< Add back
 const { URL } = require('url'); // <<< Add back
-// const { PacProxyAgent } = require('pac-proxy-agent'); // <<< Keep removed/commented
+// const { PacProxyAgent } = require('pac-proxy-agent'); // TEMP remove
 
 const app = express();
-const port = process.env.PORT || 3000; // Use environment variable or default to 3000
+const port = process.env.PORT || 3000;
 
-// Middleware to parse JSON bodies (needed for potential POST requests to the proxy)
+// Middleware to parse JSON bodies 
 app.use(express.json());
 
 // Serve static files from the current directory
 app.use(express.static(path.join(__dirname, '.')));
 
-// Proxy endpoint for VersionOne API calls
-app.all('/api/v1/*', async (req, res) => {
+// --- Revert back to defining proxy route directly on app --- 
+// --- Try using a RegExp route definition ---
+app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     const v1BaseUrl = req.headers['x-v1-base-url'];
-    const v1AuthHeader = req.headers['authorization']; // Forward the Authorization header from the client
-    const actualApiPath = req.params[0]; // Get the path after /api/v1/
-    const queryParams = req.url.split('?')[1]; // Get query parameters
-    const targetUrl = `${v1BaseUrl.replace(/\/$/, '')}/${actualApiPath}${queryParams ? '?' + queryParams : ''}`;
-    // const pacUrl = 'http://nettools.usps.gov/proxy.pac'; // <<< Keep removed/commented
+    const v1AuthHeader = req.headers['authorization'];
 
-    console.log(`[Proxy] Requesting: ${req.method} ${targetUrl}`); // Modified log
-
-    if (!v1BaseUrl || !v1AuthHeader) {
-        return res.status(400).json({ error: 'Missing X-V1-Base-URL or Authorization header for proxy.' });
+    // Extract path+query from the captured group (req.params[0])
+    const pathAndQuery = req.params[0] || ''; // Get the part matched by (.*)
+    const queryIndex = pathAndQuery.indexOf('?');
+    let actualApiPath = pathAndQuery;
+    let queryParams = null;
+    if (queryIndex !== -1) {
+        actualApiPath = pathAndQuery.substring(0, queryIndex);
+        queryParams = pathAndQuery.substring(queryIndex + 1);
     }
+    
+    const targetUrl = `${v1BaseUrl.replace(/\/$/, '')}/${actualApiPath}${queryParams ? '?' + queryParams : ''}`;
 
-    // --- Configure Agent based on Env Var + Auth --- 
+    console.log(`[App Proxy] Forwarding request for path: /${actualApiPath} to target: ${targetUrl}`); // Updated log message
+
+    // --- Restore Agent Config: Env Var Proxy with Auth > Direct --- 
     let agentOptions = {
         rejectUnauthorized: false // Keep this for self-signed certs
     };
@@ -39,19 +44,19 @@ app.all('/api/v1/*', async (req, res) => {
     let decodedUser = null;
     let decodedPass = null;
 
-    // Decode Basic Auth if present
+    // Decode Basic Auth if present (for potential proxy auth)
     if (v1AuthHeader && v1AuthHeader.startsWith('Basic ')) {
         try {
             const base64Credentials = v1AuthHeader.substring(6);
             const decodedCredentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
             [decodedUser, decodedPass] = decodedCredentials.split(':', 2);
-            console.log(`[Proxy] Decoded Basic Auth username: ${decodedUser}`);
+            console.log(`[App Proxy] Decoded Basic Auth username: ${decodedUser}`);
         } catch (e) {
-            console.error('[Proxy] Failed to decode Basic Auth credentials:', e);
+            console.error('[App Proxy] Failed to decode Basic Auth credentials:', e);
         }
     }
 
-    // --- Create Agent based on Env Var Proxy --- 
+    // --- Create Agent based on Env Var Proxy (or direct) --- 
     if (proxyEnvVar) {
         let effectiveProxyUrl = proxyEnvVar;
         // If Basic Auth creds were decoded, inject them into the proxy URL
@@ -61,23 +66,23 @@ app.all('/api/v1/*', async (req, res) => {
                 parsedProxyUrl.username = decodedUser;
                 parsedProxyUrl.password = decodedPass;
                 effectiveProxyUrl = parsedProxyUrl.toString();
-                console.log(`[Proxy] Using HTTPS_PROXY env var with injected credentials: ${parsedProxyUrl.protocol}//****:****@${parsedProxyUrl.host}`);
+                console.log(`[App Proxy] Using HTTPS_PROXY env var with injected credentials: ${parsedProxyUrl.protocol}//****:****@${parsedProxyUrl.host}`);
             } catch(e) {
-                console.error(`[Proxy] Failed to parse/modify HTTPS_PROXY env var (${proxyEnvVar}):`, e);
+                console.error(`[App Proxy] Failed to parse/modify HTTPS_PROXY env var (${proxyEnvVar}):`, e);
                 effectiveProxyUrl = proxyEnvVar;
-                console.log(`[Proxy] Using original HTTPS_PROXY env var: ${effectiveProxyUrl}`);
+                console.log(`[App Proxy] Using original HTTPS_PROXY env var: ${effectiveProxyUrl}`);
             }
         } else {
-             console.log(`[Proxy] Using HTTPS_PROXY env var (no Basic Auth creds provided/decoded): ${effectiveProxyUrl}`);
+             console.log(`[App Proxy] Using HTTPS_PROXY env var (no Basic Auth creds provided/decoded): ${effectiveProxyUrl}`);
         }
         // Create HttpsProxyAgent using the potentially authenticated proxy URL
         fetchAgent = new HttpsProxyAgent(effectiveProxyUrl, { ...agentOptions }); 
     } else if (targetUrl.startsWith('https://')) {
         // Fallback to direct agent only if env var is not set
-         console.log('[Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (respecting rejectUnauthorized).');
+         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (respecting rejectUnauthorized).');
          fetchAgent = new https.Agent(agentOptions);
     } else {
-        console.log('[Proxy] HTTPS_PROXY env var not set. Attempting direct HTTP connection.');
+        console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTP connection.');
         // No specific agent needed for plain HTTP
         fetchAgent = null; 
     }
@@ -94,19 +99,16 @@ app.all('/api/v1/*', async (req, res) => {
             ...(req.body && Object.keys(req.body).length > 0 && { body: JSON.stringify(req.body) })
         };
 
-        // --- Add agent to options if configured --- 
         if (fetchAgent) {
             options.agent = fetchAgent;
         }
-        // --- End Add agent ---
 
-        console.log(`[Proxy] Forwarding Auth Header: ${options.headers['Authorization']?.substring(0, 15)}...`); // Log only prefix for security
+        console.log(`[App Proxy] Forwarding Auth Header: ${options.headers['Authorization']?.substring(0, 15)}...`); // Updated log message
 
         const apiResponse = await fetch(targetUrl, options);
 
-        // ---- Improved Error Handling ----
+        // Improved Error Handling (keep as is)
         if (!apiResponse.ok) {
-            // Read the error body from VersionOne API
             let errorBody = null;
             let errorContentType = apiResponse.headers.get('content-type');
             try {
@@ -116,46 +118,52 @@ app.all('/api/v1/*', async (req, res) => {
                     errorBody = await apiResponse.text();
                 }
             } catch (e) {
-                console.error('[Proxy] Error reading error response body:', e);
+                console.error('[App Proxy] Error reading error response body:', e); // Updated log message
                 errorBody = 'Failed to read error body from API';
             }
-
-            console.error(`[Proxy] Received ${apiResponse.status} from API. Body:`, errorBody);
-
-            // Forward a structured error to the client
-            res.status(apiResponse.status).json({
-                error: `API Error ${apiResponse.status}`,
-                details: errorBody
-            });
+            console.error(`[App Proxy] Received ${apiResponse.status} from API. Body:`, errorBody); // Updated log message
+            res.status(apiResponse.status).json({ error: `API Error ${apiResponse.status}`, details: errorBody });
             return; // Stop further processing
         }
-        // ---- End Improved Error Handling ----
 
-        // Forward the status code from VersionOne (only for success)
-        res.status(apiResponse.status);
+        // --- Forward successful response manually --- 
+        const contentType = apiResponse.headers.get('content-type');
+        res.status(apiResponse.status); // Set status first
+        if (contentType) {
+            res.setHeader('Content-Type', contentType); // Forward content type
+        }
 
-        // Forward headers (optional, but can be useful for debugging/caching)
-        // apiResponse.headers.forEach((value, name) => {
-        //     // Avoid forwarding headers that might cause issues
-        //     if (name.toLowerCase() !== 'transfer-encoding' && name.toLowerCase() !== 'connection') {
-        //          res.setHeader(name, value);
-        //     }
-        // });
-
-        // Stream the response body back to the client
-        apiResponse.body.pipe(res);
+        // Read body based on type and send
+        try {
+            if (contentType && contentType.includes('application/json')) {
+                const responseBody = await apiResponse.json();
+                res.json(responseBody); // Send as JSON
+            } else {
+                const responseBody = await apiResponse.text();
+                res.send(responseBody); // Send as text/other
+            }
+        } catch (e) {
+            console.error('[App Proxy] Error reading/sending success response body:', e);
+            // Send an error if reading the success body fails
+            // Ensure status isn't set again if headers already sent
+            if (!res.headersSent) {
+                 res.status(500).json({ error: 'Proxy failed to read/send API response body.' });
+            }
+        }
 
     } catch (error) {
-        console.error('Proxy Error:', error);
+        console.error('[App Proxy] Error:', error); // Updated log message
         res.status(500).json({ error: 'Proxy failed to connect to the VersionOne API.', details: error.message });
     }
 });
+// --- End Revert ---
 
-// Fallback for SPA: always serve index.html for any other GET request
-// This might not be strictly necessary if you only access via index.html
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '.', 'index.html'));
-});
+
+// --- Fallback route remains commented out for now --- 
+// app.get('*', (req, res) => {
+//     res.sendFile(path.join(__dirname, '.', 'index.html'));
+// });
+
 
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);

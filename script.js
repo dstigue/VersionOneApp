@@ -187,26 +187,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!response.ok) {
                 let errorMsg = `API Error (via proxy): ${response.status} ${response.statusText}`;
+                // --- Read body as text first to avoid double-read ---
+                const errorBodyText = await response.text(); 
+                detailedError = errorBodyText; // Default detail is the raw text
                 try {
-                    const errorData = await response.json();
-                    console.error('API Error Response (via proxy):', errorData);
+                    // --- Try parsing the text as JSON --- 
+                    const errorData = JSON.parse(errorBodyText);
+                    console.error('API Error Response JSON (via proxy):', errorData);
+                    // Extract details if JSON parsing succeeded
                     if (errorData.message) {
                         detailedError = errorData.message;
                         errorMsg += ` - ${detailedError}`;
                     } else if (errorData.Exception) {
                         detailedError = errorData.Exception.Message || 'Unknown server exception';
                         errorMsg += ` - ${detailedError}`;
-                    } else if (errorData.error) {
-                        detailedError = errorData.error + (errorData.details ? ` (${errorData.details})` : '');
-                        errorMsg = detailedError;
+                    } else if (errorData.error) { 
+                        // Handle structured error from our proxy itself
+                        detailedError = errorData.error + (errorData.details ? ` (${JSON.stringify(errorData.details)})` : ''); 
+                        errorMsg = detailedError; 
                     }
                 } catch (e) {
-                    const textError = await response.text();
-                    if (textError) {
-                        detailedError = textError;
+                    // JSON parsing failed, use the raw text already captured
+                    console.error('Non-JSON API Error Response (via proxy):', errorBodyText);
+                    if (detailedError) { // Add raw text if we didn't find a specific message
                         errorMsg += ` - ${detailedError}`;
                     }
-                    console.error('Non-JSON API Error Response (via proxy):', textError);
                 }
                 throw new Error(errorMsg);
             }
