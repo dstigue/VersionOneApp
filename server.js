@@ -171,20 +171,22 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             delete ntlmAxiosConfig.headers.Authorization;
             console.log('[Debug] Removed Authorization header for NTLM path.');
 
-            // 2. UPDATE Accept header to match browser.
-            ntlmAxiosConfig.headers.Accept = 'application/json, text/plain, */*';
-            console.log('[Debug] Updated Accept header for NTLM path.');
+            // 2. REVERT Accept header to simple json.
+            ntlmAxiosConfig.headers.Accept = 'application/json';
+            console.log('[Debug] Set Accept header to application/json for NTLM path.');
 
-            // 3. FORWARD specific essential headers from original request if present.
-            const headersToForward = ['cookie', 'user-agent', 'referer', 'x-requested-with'];
-            headersToForward.forEach(headerName => {
-                if (req.headers[headerName]) {
-                    // Axios headers are case-insensitive, but let's match the common casing
-                    const properCaseHeader = headerName.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('-');
-                    ntlmAxiosConfig.headers[properCaseHeader] = req.headers[headerName];
-                    console.log(`[Debug] Forwarded ${properCaseHeader} header for NTLM path.`);
-                }
-            });
+            // 3. ONLY FORWARD Cookie header from original request if present.
+            // Remove User-Agent and Referer forwarding
+            delete ntlmAxiosConfig.headers['User-Agent']; 
+            delete ntlmAxiosConfig.headers['Referer']; 
+            delete ntlmAxiosConfig.headers['X-Requested-With']; // Ensure this is gone too
+
+            if (req.headers.cookie) {
+                ntlmAxiosConfig.headers.Cookie = req.headers.cookie;
+                console.log(`[Debug] Forwarded Cookie header for NTLM path.`);
+            } else {
+                delete ntlmAxiosConfig.headers.Cookie; // Remove if not in original request
+            }
             // *** End NTLM Header Adjustments ***
 
             // Log detailed NTLM request config
