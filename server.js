@@ -75,6 +75,8 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         } else {
              console.log(`[App Proxy] Using HTTPS_PROXY env var (no Basic Auth creds provided/decoded): ${effectiveProxyUrl}`);
         }
+        // <<< Log URL before creating agent >>>
+        console.log(`[App Proxy] Attempting to create HttpsProxyAgent with URL: ${effectiveProxyUrl}`); 
         // Create HttpsProxyAgent using the potentially authenticated proxy URL
         fetchAgent = new HttpsProxyAgent(effectiveProxyUrl, { ...agentOptions }); 
         console.log("[App Proxy] Created HttpsProxyAgent."); // <<< Log agent type
@@ -105,7 +107,10 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             options.agent = fetchAgent;
         }
 
-        console.log(`[App Proxy] Forwarding Auth Header: ${options.headers['Authorization']?.substring(0, 15)}...`); // Updated log message
+        // <<< Log final options object >>>
+        console.log("[App Proxy] Options for fetch:", JSON.stringify(options, (key, value) => key === 'agent' ? '[Agent Object]' : value, 2)); 
+
+        console.log(`[App Proxy] Forwarding Auth Header: ${options.headers['Authorization']?.substring(0, 15)}...`); 
 
         const apiResponse = await fetch(targetUrl, options);
 
