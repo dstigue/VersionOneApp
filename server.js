@@ -67,11 +67,11 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
                 ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] })
             },
             ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
+            httpsAgent: targetUrl.startsWith('https://') ? httpsAgent : undefined,
             validateStatus: function (status) {
-                return status >= 200 && status < 600; // Accept all status codes
+                return status >= 200 && status < 600;
             },
-            // Explicitly set proxy to false to bypass any system proxy for troubleshooting
-            // Remove this line if you want to use the proxy from environment variables
+            // Explicitly bypass proxy for this request
             proxy: false
         };
 
