@@ -93,7 +93,23 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     const v1BaseUrl = req.headers['x-v1-base-url'];
     const v1AuthHeader = req.headers['authorization'];
     
-    const pathAndQuery = req.params[0] || '';
+    // Use req.originalUrl to get the full path including query string reliably
+    const originalUrl = req.originalUrl;
+    const apiPrefix = '/api/v1/';
+    const apiPathStartIndex = originalUrl.indexOf(apiPrefix);
+    
+    let pathAndQuery = '';
+    if (apiPathStartIndex !== -1) {
+        pathAndQuery = originalUrl.substring(apiPathStartIndex + apiPrefix.length);
+    } else {
+        // Fallback or error handling if prefix not found, though it should match the route
+        console.error(`[Error] Could not find API prefix '${apiPrefix}' in originalUrl '${originalUrl}'. Using req.params[0] as fallback.`);
+        pathAndQuery = req.params[0] || ''; // Fallback to previous method
+    }
+    
+    console.log(`[Debug] Extracted pathAndQuery from originalUrl: ${pathAndQuery}`); // <<< Log the result
+
+    // Now split path and query using the extracted value
     const queryIndex = pathAndQuery.indexOf('?');
     let actualApiPath = pathAndQuery;
     let queryParams = null;
