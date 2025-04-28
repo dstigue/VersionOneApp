@@ -8,8 +8,8 @@ const https = require('https');
 console.log('[Debug] Loaded https');
 const axios = require('axios');
 console.log('[Debug] Loaded axios');
-const axiosNtlm = require('axios-ntlm');
-console.log('[Debug] Loaded axios-ntlm');
+const { NtlmClient } = require('axios-ntlm');
+console.log('[Debug] Loaded axios-ntlm Client');
 const { URL } = require('url');
 console.log('[Debug] Loaded url.URL');
 const { parse: parseUrl } = require('url');
@@ -135,14 +135,25 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         if (ntlmCredentials) {
             // ---> Use NTLM Proxy via axios-ntlm
             console.log(`[App Proxy] Using NTLM proxy credentials: username='${ntlmCredentials.username}', domain='${ntlmCredentials.domain || '(none)'}'`);
+            
+            // Create an NTLM client instance with credentials
+            const ntlmClient = NtlmClient(ntlmCredentials);
 
+            // Prepare the config for the client call (similar to baseAxiosConfig but without NTLM creds inside)
             const ntlmAxiosConfig = {
-                ...baseAxiosConfig,
-                ...ntlmCredentials, // Add NTLM credentials
+                method: req.method,
+                url: targetUrl,
+                headers: baseAxiosConfig.headers, // Reuse headers from base config
+                ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
+                validateStatus: baseAxiosConfig.validateStatus,
+                timeout: baseAxiosConfig.timeout,
+                maxRedirects: baseAxiosConfig.maxRedirects,
+                httpsAgent: baseAxiosConfig.httpsAgent // Reuse agent from base config
             };
 
-            console.log('[App Proxy] Making request via axios-ntlm (proxy)');
-            apiResponse = await axiosNtlm(ntlmAxiosConfig);
+            console.log('[App Proxy] Making request via NTLM client (proxy)');
+            // Call the NTLM client instance with the config
+            apiResponse = await ntlmClient(ntlmAxiosConfig);
 
         } else {
             // ---> No Proxy or invalid credentials - Attempt Direct Connection via standard axios
