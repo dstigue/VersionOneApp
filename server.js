@@ -4,18 +4,37 @@ const path = require('path');
 const https = require('https'); // Require https module
 // const { HttpsProxyAgent } = require('https-proxy-agent'); // <<< Remove
 const { URL } = require('url'); // <<< Add back
-const ProxyAgentModule = require('proxy-agent'); // <<< Import the module
-const ProxyAgent = ProxyAgentModule.default || ProxyAgentModule; // <<< Use .default if it exists, otherwise use the module itself
 // const { PacProxyAgent } = require('pac-proxy-agent'); // TEMP remove
+const axios = require('axios'); // <<< Import axios
+
+// Disable certificate validation globally
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Create a custom axios instance with certificate validation disabled
+const customAxios = axios.create({
+  httpsAgent: new https.Agent({  
+    rejectUnauthorized: false,
+    // The following settings help with certain certificate chain issues
+    secureOptions: require('constants').SSL_OP_LEGACY_SERVER_CONNECT,
+    checkServerIdentity: () => undefined // Skip hostname verification
+  })
+});
 
 // Middleware to parse JSON bodies 
 app.use(express.json());
 
 // Serve static files from the current directory
 app.use(express.static(path.join(__dirname, '.')));
+
+// --- Create an https agent to ignore SSL errors ---
+// This agent will be used by axios for HTTPS requests
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false // <<< Ignore SSL certificate errors
+});
+// --- End https agent ---
 
 // --- Revert back to defining proxy route directly on app --- 
 // --- Try using a RegExp route definition ---
@@ -35,150 +54,78 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     
     const targetUrl = `${v1BaseUrl.replace(/\/$/, '')}/${actualApiPath}${queryParams ? '?' + queryParams : ''}`;
 
-    console.log(`[App Proxy] Forwarding request for path: /${actualApiPath} to target: ${targetUrl}`); // Updated log message
-
-    // --- Restore Agent Config: Env Var Proxy with Auth > Direct --- 
-    let fetchAgent = null;
-    // --- Log the environment variables Node.js sees --- 
-    console.log(`[App Proxy] Checking env vars: process.env.HTTPS_PROXY = ${process.env.HTTPS_PROXY}`);
-    console.log(`[App Proxy] Checking env vars: process.env.https_proxy = ${process.env.https_proxy}`);
-    // --- End Log ---
-    const proxyEnvVar = process.env.HTTPS_PROXY || process.env.https_proxy; // Check Env Var
-    let decodedUser = null;
-    let decodedPass = null;
-
-    // Decode Basic Auth if present (for potential proxy auth)
-    if (v1AuthHeader && v1AuthHeader.startsWith('Basic ')) {
-        try {
-            const base64Credentials = v1AuthHeader.substring(6);
-            const decodedCredentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
-            [decodedUser, decodedPass] = decodedCredentials.split(':', 2);
-            console.log(`[App Proxy] Decoded Basic Auth username: ${decodedUser}`);
-        } catch (e) {
-            console.error('[App Proxy] Failed to decode Basic Auth credentials:', e);
-        }
-    }
-
-    // --- Create Agent based ONLY on Env Var Proxy --- 
-    if (proxyEnvVar) {
-        console.log("[App Proxy] Entered 'if (proxyEnvVar)' block. Value:", proxyEnvVar);
-        let effectiveProxyUrl = proxyEnvVar;
-        // If Basic Auth creds were decoded, inject them into the proxy URL
-        if (decodedUser && decodedPass) {
-            try {
-                const parsedProxyUrl = new URL(proxyEnvVar);
-                parsedProxyUrl.username = decodedUser;
-                parsedProxyUrl.password = decodedPass;
-                effectiveProxyUrl = parsedProxyUrl.toString();
-                console.log(`[App Proxy] Using HTTPS_PROXY env var with injected credentials: ${parsedProxyUrl.protocol}//****:****@${parsedProxyUrl.host}`);
-            } catch(e) {
-                console.error(`[App Proxy] Failed to parse/modify HTTPS_PROXY env var (${proxyEnvVar}):`, e);
-                effectiveProxyUrl = proxyEnvVar;
-                console.log(`[App Proxy] Using original HTTPS_PROXY env var: ${effectiveProxyUrl}`);
-            }
-        } else {
-             console.log(`[App Proxy] Using HTTPS_PROXY env var (no Basic Auth creds provided/decoded): ${effectiveProxyUrl}`);
-        }
-        // Create ProxyAgent if Env Var Proxy is set
-        try {
-            // ProxyAgent constructor usually just needs the URL
-            // TLS options like rejectUnauthorized are typically passed to fetch directly
-            fetchAgent = new ProxyAgent(effectiveProxyUrl); 
-            console.log("[App Proxy] Created ProxyAgent for Env Var Proxy.");
-        } catch (e) {
-            console.error("[App Proxy] Failed to create ProxyAgent:", e);
-            // Proceed without agent if creation fails
-            fetchAgent = null;
-        }
-    } else if (targetUrl.startsWith('https://')) {
-        // Fallback to direct agent only if env var is not set
-         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (respecting rejectUnauthorized).');
-         // Still need direct https.Agent for rejectUnauthorized when no proxy
-         fetchAgent = new https.Agent({ rejectUnauthorized: false });
-         console.log("[App Proxy] Created direct https.Agent (rejectUnauthorized: false).");
-    } else {
-        // No proxy env var set, no agent needed (TLS handled by NODE_TLS_REJECT_UNAUTHORIZED)
-         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct connection.');
-         fetchAgent = null;
-    }
-    // --- End Agent Config ---
+    console.log(`[App Proxy] Forwarding request for path: /${actualApiPath} to target: ${targetUrl} using axios`);
 
     try {
-        const options = {
+        // Configure axios request
+        const axiosConfig = {
             method: req.method,
+            url: targetUrl,
             headers: {
                 'Authorization': v1AuthHeader,
                 'Accept': 'application/json',
                 ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] })
             },
-            ...(req.body && Object.keys(req.body).length > 0 && { body: JSON.stringify(req.body) })
+            ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
+            validateStatus: function (status) {
+                return status >= 200 && status < 600; // Accept all status codes
+            },
+            // Explicitly set proxy to false to bypass any system proxy for troubleshooting
+            // Remove this line if you want to use the proxy from environment variables
+            proxy: false
         };
 
-        // --- Pass agent AND rejectUnauthorized option directly to fetch --- 
-        if (fetchAgent) {
-            options.agent = fetchAgent;
-        }
-        // Explicitly add rejectUnauthorized to fetch options if target is HTTPS,
-        // regardless of whether a proxy agent or direct agent is used.
-        if (targetUrl.startsWith('https://')) {
-            options.rejectUnauthorized = false;
-        }
-        // --- End Add agent and TLS option --- 
+        console.log(`[App Proxy] Making axios request with certificate validation disabled`);
+        console.log(`[App Proxy] Forwarding Auth Header: ${axiosConfig.headers['Authorization']?.substring(0, 15)}...`);
 
-        // <<< Log final options object >>>
-        console.log("[App Proxy] Options for fetch:", JSON.stringify(options, (key, value) => key === 'agent' ? '[Agent Object]' : value, 2)); 
+        // Use our custom axios instance
+        const apiResponse = await customAxios(axiosConfig);
 
-        console.log(`[App Proxy] Forwarding Auth Header: ${options.headers['Authorization']?.substring(0, 15)}...`); 
+        console.log(`[App Proxy] Received ${apiResponse.status} from API.`);
 
-        const apiResponse = await fetch(targetUrl, options);
-
-        // Improved Error Handling (keep as is)
-        if (!apiResponse.ok) {
-            let errorBody = null;
-            let errorContentType = apiResponse.headers.get('content-type');
-            try {
-                if (errorContentType && errorContentType.includes('application/json')) {
-                    errorBody = await apiResponse.json();
-                } else {
-                    errorBody = await apiResponse.text();
-                }
-            } catch (e) {
-                console.error('[App Proxy] Error reading error response body:', e); // Updated log message
-                errorBody = 'Failed to read error body from API';
-            }
-            console.error(`[App Proxy] Received ${apiResponse.status} from API. Body:`, errorBody); // Updated log message
-            res.status(apiResponse.status).json({ error: `API Error ${apiResponse.status}`, details: errorBody });
-            return; // Stop further processing
-        }
-
-        // --- Forward successful response manually --- 
-        const contentType = apiResponse.headers.get('content-type');
-        res.status(apiResponse.status); // Set status first
+        // Forward response
+        const contentType = apiResponse.headers['content-type'];
         if (contentType) {
-            res.setHeader('Content-Type', contentType); // Forward content type
+            res.setHeader('Content-Type', contentType);
         }
 
-        // Read body based on type and send
-        try {
-            if (contentType && contentType.includes('application/json')) {
-                const responseBody = await apiResponse.json();
-                res.json(responseBody); // Send as JSON
-            } else {
-                const responseBody = await apiResponse.text();
-                res.send(responseBody); // Send as text/other
-            }
-        } catch (e) {
-            console.error('[App Proxy] Error reading/sending success response body:', e);
-            // Send an error if reading the success body fails
-            // Ensure status isn't set again if headers already sent
-            if (!res.headersSent) {
-                 res.status(500).json({ error: 'Proxy failed to read/send API response body.' });
-            }
-        }
+        res.status(apiResponse.status);
+        res.send(apiResponse.data);
 
     } catch (error) {
-        console.error('[App Proxy] Error:', error); // Updated log message
-        res.status(500).json({ error: 'Proxy failed to connect to the VersionOne API.', details: error.message });
+        console.error('[App Proxy] Axios Error:', error.message);
+        
+        // Enhanced error logging
+        if (error.code) {
+            console.error(`[App Proxy] Error Code: ${error.code}`);
+        }
+        if (error.cause) {
+            console.error(`[App Proxy] Error Cause:`, error.cause);
+        }
+        if (error.stack) {
+            console.error(`[App Proxy] Stack Trace:`, error.stack);
+        }
+
+        // Standard error handling
+        if (error.response) {
+            console.error('[App Proxy] Error Response Status:', error.response.status);
+            res.status(error.response.status).json({
+                error: `API Error ${error.response.status}`,
+                details: error.response.data || error.message
+            });
+        } else if (error.request) {
+            console.error('[App Proxy] System Error Code:', error.code || 'N/A');
+            res.status(503).json({
+                error: 'Proxy failed to connect to the API.',
+                details: error.code || error.message
+            });
+        } else {
+            console.error('[App Proxy] Error Message:', error.message);
+            res.status(500).json({
+                error: 'Proxy configuration error.',
+                details: error.message
+            });
+        }
     }
 });
 // --- End Revert ---
@@ -193,4 +140,15 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
     console.log('Serving static files from:', path.join(__dirname, '.'));
+    console.log('[App Startup] Using Axios with certificate validation DISABLED:');
+    console.log('[App Startup] - NODE_TLS_REJECT_UNAUTHORIZED=0 (global setting)');
+    console.log('[App Startup] - Custom axios instance with rejectUnauthorized=false');
+    console.log('[App Startup] - SSL_OP_LEGACY_SERVER_CONNECT options enabled');
+    console.log('[App Startup] - Server identity checking disabled');
+    
+    if (process.env.HTTPS_PROXY || process.env.https_proxy) {
+        console.log(`[App Startup] HTTPS_PROXY: ${process.env.HTTPS_PROXY || process.env.https_proxy}`);
+    } else {
+        console.log('[App Startup] No HTTPS_PROXY environment variable detected.');
+    }
 }); 
