@@ -2,8 +2,9 @@ const express = require('express');
 // const fetch = require('node-fetch'); // TEMP remove
 const path = require('path');
 const https = require('https'); // Require https module
-const { HttpsProxyAgent } = require('https-proxy-agent'); // <<< Add back
+// const { HttpsProxyAgent } = require('https-proxy-agent'); // <<< Remove
 const { URL } = require('url'); // <<< Add back
+const ProxyAgent = require('proxy-agent'); // <<< Add proxy-agent
 // const { PacProxyAgent } = require('pac-proxy-agent'); // TEMP remove
 
 const app = express();
@@ -57,9 +58,8 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         }
     }
 
-    // --- Create Agent based on Env Var Proxy (or direct) --- 
+    // --- Create Agent based ONLY on Env Var Proxy --- 
     if (proxyEnvVar) {
-        // <<< Log Entry into block >>>
         console.log("[App Proxy] Entered 'if (proxyEnvVar)' block. Value:", proxyEnvVar);
         let effectiveProxyUrl = proxyEnvVar;
         // If Basic Auth creds were decoded, inject them into the proxy URL
@@ -78,23 +78,23 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         } else {
              console.log(`[App Proxy] Using HTTPS_PROXY env var (no Basic Auth creds provided/decoded): ${effectiveProxyUrl}`);
         }
-        // Create HttpsProxyAgent WITHOUT extra agentOptions
+        // Create ProxyAgent if Env Var Proxy is set
         try {
-            fetchAgent = new HttpsProxyAgent(effectiveProxyUrl, { rejectUnauthorized: false }); 
-            console.log("[App Proxy] Created HttpsProxyAgent for Env Var Proxy (rejectUnauthorized: false).");
+            // ProxyAgent constructor usually just needs the URL
+            // TLS options like rejectUnauthorized are typically passed to fetch directly
+            fetchAgent = new ProxyAgent(effectiveProxyUrl); 
+            console.log("[App Proxy] Created ProxyAgent for Env Var Proxy.");
         } catch (e) {
-            console.error("[App Proxy] Failed to create HttpsProxyAgent:", e);
+            console.error("[App Proxy] Failed to create ProxyAgent:", e);
             // Proceed without agent if creation fails
             fetchAgent = null;
         }
     } else if (targetUrl.startsWith('https://')) {
         // Fallback to direct agent only if env var is not set
-         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (rejecting unauthorized).'); // <<< Change message
-         // For direct connections, DON'T disable TLS by default unless absolutely necessary
-         // If direct connection fails with cert error, user should ensure certs are trusted
-         // or explicitly add rejectUnauthorized:false here if required.
-         fetchAgent = new https.Agent({ rejectUnauthorized: false }); // <<< Keep for consistency with previous state
-         console.log("[App Proxy] Created direct https.Agent (rejectUnauthorized: false)."); // <<< Keep for consistency
+         console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct HTTPS connection (respecting rejectUnauthorized).');
+         // Still need direct https.Agent for rejectUnauthorized when no proxy
+         fetchAgent = new https.Agent({ rejectUnauthorized: false });
+         console.log("[App Proxy] Created direct https.Agent (rejectUnauthorized: false).");
     } else {
         // No proxy env var set, no agent needed (TLS handled by NODE_TLS_REJECT_UNAUTHORIZED)
          console.log('[App Proxy] HTTPS_PROXY env var not set. Attempting direct connection.');
@@ -113,9 +113,16 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             ...(req.body && Object.keys(req.body).length > 0 && { body: JSON.stringify(req.body) })
         };
 
+        // --- Pass agent AND rejectUnauthorized option directly to fetch --- 
         if (fetchAgent) {
             options.agent = fetchAgent;
         }
+        // Explicitly add rejectUnauthorized to fetch options if target is HTTPS,
+        // regardless of whether a proxy agent or direct agent is used.
+        if (targetUrl.startsWith('https://')) {
+            options.rejectUnauthorized = false;
+        }
+        // --- End Add agent and TLS option --- 
 
         // <<< Log final options object >>>
         console.log("[App Proxy] Options for fetch:", JSON.stringify(options, (key, value) => key === 'agent' ? '[Agent Object]' : value, 2)); 
