@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VersionOne Story Copier</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>VersionOne Story Copier</h1>
+
+    <div id="settings-section">
+        <h2>Settings</h2>
+        <label>Authentication Method:</label>
+        <input type="radio" id="auth-token" name="auth-method" value="token" checked>
+        <label for="auth-token">Access Token</label>
+        <input type="radio" id="auth-basic" name="auth-method" value="basic">
+        <label for="auth-basic">Username/Password</label>
+        <br>
+
+        <div id="token-input-section">
+            <label for="v1-token">Access Token:</label>
+            <input type="password" id="v1-token" placeholder="Your Access Token">
+        </div>
+
+        <div id="basic-auth-input-section" style="display: none;">
+            <label for="v1-username">Username:</label>
+            <input type="text" id="v1-username" placeholder="Your Username">
+            <br>
+            <label for="v1-password">Password:</label>
+            <input type="password" id="v1-password" placeholder="Your Password">
+        </div>
+
+        <label for="v1-url">VersionOne Base URL:</label>
+        <input type="url" id="v1-url" placeholder="https://wwwX.v1host.com/V1Instance">
+        <br>
+        <button id="save-settings">Save Settings</button>
+        <p id="settings-status"></p>
+    </div>
+
+    <hr>
+
+    <div id="selection-section">
+        <h2>Select Timeboxes & Stories</h2>
+        <div>
+            <label for="source-timebox">Source Timebox:</label>
+            <select id="source-timebox">
+                <option value="">-- Select Source Timebox --</option>
+                <!-- Timeboxes will be populated here -->
+            </select>
+            <button id="load-stories">Load Stories</button>
+        </div>
+        <div id="stories-tasks-section">
+            <h3>Stories & Tasks in Source Timebox</h3>
+            <div id="stories-list">
+                <!-- Stories and tasks will be displayed here -->
+                <p>Select a source timebox and click "Load Stories".</p>
+            </div>
+        </div>
+        <div id="target-timebox-section">
+            <label for="target-timebox">Target Timebox:</label>
+            <select id="target-timebox">
+                <option value="">-- Select Target Timebox --</option>
+                <!-- Timeboxes will be populated here -->
+            </select>
+        </div>
+        <div id="target-parent-section">
+            <label for="target-parent">Target Parent (Super):</label>
+            <select id="target-parent">
+                <option value="">-- Select Target Parent (Required) --</option>
+                <!-- Parent Epics/Portfolio Items will be populated here -->
+            </select>
+        </div>
+    </div>
+
+    <hr>
+
+    <div id="action-section">
+        <button id="copy-button" disabled>Copy Selected Stories/Tasks to Target Timebox</button>
+        <p id="status-message"></p>
+        <div id="loading-indicator" style="display: none;">Processing...</div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
