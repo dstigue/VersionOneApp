@@ -11,11 +11,11 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.9.0",
-    "axios-ntlm": "^1.4.4",
     "express": "^4.17.1",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
     "node-fetch": "^2.6.1",
+    "node-http-ntlm": "^1.7.5",
     "proxy-agent": "^6.5.0"
   }
 }

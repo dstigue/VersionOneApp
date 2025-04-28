@@ -8,8 +8,8 @@ const https = require('https');
 console.log('[Debug] Loaded https');
 const axios = require('axios');
 console.log('[Debug] Loaded axios');
-const { NtlmClient } = require('axios-ntlm');
-console.log('[Debug] Loaded axios-ntlm Client');
+const httpntlm = require('node-http-ntlm');
+console.log('[Debug] Loaded node-http-ntlm');
 const { URL } = require('url');
 console.log('[Debug] Loaded url.URL');
 const { parse: parseUrl } = require('url');
@@ -136,80 +136,112 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         // Attempt to extract NTLM credentials
         const ntlmCredentials = extractProxyCredentials();
         
-        // Base axios config (common parts)
-        const baseAxiosConfig = {
-            method: req.method,
-            url: targetUrl,
-            headers: {
-                'Authorization': v1AuthHeader,
-                'Accept': 'application/json',
-                ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] }),
-            },
-            ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
-            validateStatus: function (status) {
-                return status >= 200 && status < 600;
-            },
-            timeout: 30000,
-            maxRedirects: 0,
-            httpsAgent: new https.Agent({
-                rejectUnauthorized: false,
-                keepAlive: true,
-            })
-        };
-
         if (ntlmCredentials) {
-            // ---> Use NTLM Proxy via axios-ntlm
+            // ---> Use NTLM Proxy via node-http-ntlm
             console.log(`[App Proxy] Using NTLM proxy credentials: username='${ntlmCredentials.username}', domain='${ntlmCredentials.domain || '(none)'}'`);
 
-            const ntlmClient = NtlmClient(ntlmCredentials);
+            // Configure options for node-http-ntlm
+            const ntlmOptions = {
+                url: targetUrl, // The final target URL
+                username: ntlmCredentials.username,
+                password: ntlmCredentials.password,
+                domain: ntlmCredentials.domain,
+                workstation: '', // Often optional, can leave blank unless required by proxy
+                headers: {
+                    // Set headers needed by the TARGET server (based on browser)
+                    'Accept': 'application/json, text/plain, */*',
+                    // Forward Cookie if present
+                    ...(req.headers.cookie && { 'Cookie': req.headers.cookie }),
+                    // Forward User-Agent if present
+                    ...(req.headers['user-agent'] && { 'User-Agent': req.headers['user-agent'] }),
+                    // Forward Referer if present
+                    ...(req.headers.referer && { 'Referer': req.headers.referer }),
+                    // Forward X-Requested-With if present
+                    ...(req.headers['x-requested-with'] && { 'X-Requested-With': req.headers['x-requested-with'] }),
+                    // Add Content-Type if present in original request (for POST/PUT)
+                    ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] })
+                    // DO NOT add the original 'Authorization' header here
+                },
+                // Set body/data if present in original request
+                ...(req.body && Object.keys(req.body).length > 0 && { 
+                    // httpntlm expects 'body' for data, needs to be stringified for JSON
+                    body: JSON.stringify(req.body) 
+                }),
+                // httpntlm doesn't use axios agent, handles connection itself.
+                // It uses agentkeepalive internally, but doesn't expose rejectUnauthorized easily.
+                // We rely on the global process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0' for cert issues.
+                timeout: 30000, // Set timeout if needed
+                allowRedirects: false // Usually false for API proxies
+            };
 
-            // Start with base config for NTLM request
-            const ntlmAxiosConfig = { ...baseAxiosConfig };
-
-            // *** NTLM-specific Header Adjustments ***
-            // 1. REMOVE the original Authorization header.
-            delete ntlmAxiosConfig.headers.Authorization;
-            console.log('[Debug] Removed Authorization header for NTLM path.');
-
-            // 2. REVERT Accept header to simple json.
-            ntlmAxiosConfig.headers.Accept = 'application/json';
-            console.log('[Debug] Set Accept header to application/json for NTLM path.');
-
-            // 3. ONLY FORWARD Cookie header from original request if present.
-            // Remove User-Agent and Referer forwarding
-            delete ntlmAxiosConfig.headers['User-Agent']; 
-            delete ntlmAxiosConfig.headers['Referer']; 
-            delete ntlmAxiosConfig.headers['X-Requested-With']; // Ensure this is gone too
-
-            if (req.headers.cookie) {
-                ntlmAxiosConfig.headers.Cookie = req.headers.cookie;
-                console.log(`[Debug] Forwarded Cookie header for NTLM path.`);
-            } else {
-                delete ntlmAxiosConfig.headers.Cookie; // Remove if not in original request
-            }
-            // *** End NTLM Header Adjustments ***
-
-            // Log detailed NTLM request config
-            console.log('[App Proxy] NTLM Request Config:', JSON.stringify({
-                method: ntlmAxiosConfig.method,
-                url: ntlmAxiosConfig.url,
-                headers: ntlmAxiosConfig.headers,
-                data: ntlmAxiosConfig.data ? (typeof ntlmAxiosConfig.data === 'object' ? '[Object]' : '[Data Present]') : '[No Data]',
-                timeout: ntlmAxiosConfig.timeout,
-                maxRedirects: ntlmAxiosConfig.maxRedirects,
-                httpsAgent_keepAlive: ntlmAxiosConfig.httpsAgent?.options?.keepAlive,
-                httpsAgent_rejectUnauthorized: ntlmAxiosConfig.httpsAgent?.options?.rejectUnauthorized,
+            // Log detailed NTLM request config for node-http-ntlm
+            console.log('[App Proxy] node-http-ntlm Request Options:', JSON.stringify({
+                url: ntlmOptions.url,
+                username: ntlmOptions.username,
+                domain: ntlmOptions.domain,
+                headers: ntlmOptions.headers,
+                body: ntlmOptions.body ? '[Body Present]' : '[No Body]',
+                timeout: ntlmOptions.timeout,
+                allowRedirects: ntlmOptions.allowRedirects
             }, null, 2));
 
-            console.log('[App Proxy] Making request via NTLM client (proxy)');
-            apiResponse = await ntlmClient(ntlmAxiosConfig);
+            // Determine method and call appropriate httpntlm function
+            const method = req.method.toLowerCase();
+            console.log(`[App Proxy] Making ${method.toUpperCase()} request via node-http-ntlm (proxy)`);
+
+            // Wrap httpntlm call in a promise for async/await
+            const makeNtlmRequest = () => new Promise((resolve, reject) => {
+                httpntlm[method](ntlmOptions, (err, ntlmRes) => {
+                    if (err) {
+                        console.error('[node-http-ntlm Error Raw]:', err);
+                        // Construct an error object similar to Axios for consistent handling
+                        const errorObj = new Error(err.message || 'node-http-ntlm request failed');
+                        errorObj.code = err.code;
+                        if (ntlmRes) { // Sometimes response exists even on error
+                             errorObj.response = {
+                                status: ntlmRes.statusCode,
+                                headers: ntlmRes.headers,
+                                data: ntlmRes.body // httpntlm puts body here
+                            };
+                        }
+                        return reject(errorObj);
+                    }
+                    // Construct a response object similar to Axios
+                    const responseObj = {
+                        status: ntlmRes.statusCode,
+                        headers: ntlmRes.headers,
+                        data: ntlmRes.body // httpntlm puts body here
+                    };
+                    resolve(responseObj);
+                });
+            });
+
+            apiResponse = await makeNtlmRequest();
 
         } else {
             // ---> No Proxy or invalid credentials - Attempt Direct Connection via standard axios
             console.warn('[App Proxy] NTLM proxy credentials not found or incomplete in HTTPS_PROXY. Attempting direct connection...');
             
             // Use baseAxiosConfig AS IS (includes original Authorization header)
-            const directAxiosConfig = { ...baseAxiosConfig };
+            const directAxiosConfig = {
+                method: req.method,
+                url: targetUrl,
+                headers: {
+                    'Authorization': v1AuthHeader,
+                    'Accept': 'application/json',
+                    ...(req.headers['content-type'] && { 'Content-Type': req.headers['content-type'] }),
+                },
+                ...(req.body && Object.keys(req.body).length > 0 && { data: req.body }),
+                validateStatus: function (status) {
+                    return status >= 200 && status < 600;
+                },
+                timeout: 30000,
+                maxRedirects: 0,
+                httpsAgent: new https.Agent({
+                    rejectUnauthorized: false,
+                    keepAlive: true,
+                })
+            };
 
             // Log detailed Direct request config
             console.log('[App Proxy] Direct Request Config:', JSON.stringify({
