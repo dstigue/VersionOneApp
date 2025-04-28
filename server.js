@@ -100,9 +100,18 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     if (queryIndex !== -1) {
         actualApiPath = pathAndQuery.substring(0, queryIndex);
         queryParams = pathAndQuery.substring(queryIndex + 1);
+        console.log(`[Debug] Extracted queryParams: ${queryParams}`);
+    } else {
+        console.log('[Debug] No queryParams found in path.');
     }
     
-    const targetUrl = `${v1BaseUrl.replace(/\/$/, '')}/${actualApiPath}${queryParams ? '?' + queryParams : ''}`;
+    // Log parts before constructing URL
+    const baseUrlClean = v1BaseUrl.replace(/\/$/, '');
+    const queryString = queryParams ? '?' + queryParams : '';
+    console.log(`[Debug] Constructing URL parts: base='${baseUrlClean}', path='/${actualApiPath}', query='${queryString}'`);
+
+    // Construct the target URL
+    const targetUrl = `${baseUrlClean}/${actualApiPath}${queryString}`;
     console.log(`[App Proxy] Full target URL: ${targetUrl}`);
     
     let apiResponse;
