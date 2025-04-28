@@ -1,54 +1,28 @@
-console.log('[Debug] Script start');
-
 const express = require('express');
-console.log('[Debug] Loaded express');
 const path = require('path');
-console.log('[Debug] Loaded path');
 const https = require('https');
-console.log('[Debug] Loaded https');
 const axios = require('axios');
-console.log('[Debug] Loaded axios');
 const httpntlm = require('node-http-ntlm');
-console.log('[Debug] Loaded node-http-ntlm');
 const { URL } = require('url');
-console.log('[Debug] Loaded url.URL');
 const { parse: parseUrl } = require('url');
-console.log('[Debug] Loaded url.parse');
 
 // Disable certificate validation globally
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-console.log('[Debug] Set NODE_TLS_REJECT_UNAUTHORIZED');
 
 const app = express();
-console.log('[Debug] Initialized express app');
 const port = process.env.PORT || 3000;
-console.log('[Debug] Determined port');
 
-// Log all environment variables related to proxies
+// Log essential proxy environment variables
 console.log('[App Startup] Proxy environment variables:');
 console.log(`  HTTPS_PROXY: ${process.env.HTTPS_PROXY || process.env.https_proxy || 'Not set'}`);
 console.log(`  HTTP_PROXY: ${process.env.HTTP_PROXY || process.env.http_proxy || 'Not set'}`);
 console.log(`  NO_PROXY: ${process.env.NO_PROXY || process.env.no_proxy || 'Not set'}`);
 
 // Middleware to parse JSON bodies 
-console.log('[Debug] Setting up express.json middleware...');
 app.use(express.json());
-console.log('[Debug] express.json middleware set.');
 
 // Serve static files from the current directory
-console.log('[Debug] Setting up express.static middleware...');
 app.use(express.static(path.join(__dirname, '.')));
-console.log('[Debug] express.static middleware set.');
-
-// Add a middleware to log raw requests
-console.log('[Debug] Setting up request logger middleware...');
-app.use((req, res, next) => {
-  console.log('\n[Request Logger] ---- New Request ----');
-  console.log(`[Request Logger] ${req.method} ${req.url}`);
-  console.log('[Request Logger] Headers:', JSON.stringify(req.headers, null, 2));
-  next();
-});
-console.log('[Debug] Request logger middleware set.');
 
 // Extract credentials from proxy URL, potentially including domain
 function extractProxyCredentials() {
@@ -87,8 +61,6 @@ function extractProxyCredentials() {
 
 // Your route handler
 app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
-    console.log('\n[App Proxy] ---- Processing API Request ----');
-    
     // Extract path+query and other details
     const v1BaseUrl = req.headers['x-v1-base-url'];
     const v1AuthHeader = req.headers['authorization'];
@@ -102,12 +74,9 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     if (apiPathStartIndex !== -1) {
         pathAndQuery = originalUrl.substring(apiPathStartIndex + apiPrefix.length);
     } else {
-        // Fallback or error handling if prefix not found, though it should match the route
         console.error(`[Error] Could not find API prefix '${apiPrefix}' in originalUrl '${originalUrl}'. Using req.params[0] as fallback.`);
         pathAndQuery = req.params[0] || ''; // Fallback to previous method
     }
-    
-    console.log(`[Debug] Extracted pathAndQuery from originalUrl: ${pathAndQuery}`); // <<< Log the result
 
     // Now split path and query using the extracted value
     const queryIndex = pathAndQuery.indexOf('?');
@@ -116,19 +85,12 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
     if (queryIndex !== -1) {
         actualApiPath = pathAndQuery.substring(0, queryIndex);
         queryParams = pathAndQuery.substring(queryIndex + 1);
-        console.log(`[Debug] Extracted queryParams: ${queryParams}`);
-    } else {
-        console.log('[Debug] No queryParams found in path.');
     }
     
-    // Log parts before constructing URL
+    // Construct the target URL
     const baseUrlClean = v1BaseUrl.replace(/\/$/, '');
     const queryString = queryParams ? '?' + queryParams : '';
-    console.log(`[Debug] Constructing URL parts: base='${baseUrlClean}', path='/${actualApiPath}', query='${queryString}'`);
-
-    // Construct the target URL
     const targetUrl = `${baseUrlClean}/${actualApiPath}${queryString}`;
-    console.log(`[App Proxy] Full target URL: ${targetUrl}`);
     
     let apiResponse;
 
@@ -137,9 +99,6 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         const ntlmCredentials = extractProxyCredentials();
         
         if (ntlmCredentials) {
-            // ---> Use NTLM Proxy via node-http-ntlm
-            console.log(`[App Proxy] Using NTLM proxy credentials: username='${ntlmCredentials.username}', domain='${ntlmCredentials.domain || '(none)'}'`);
-
             // Configure options for node-http-ntlm
             const ntlmOptions = {
                 url: targetUrl, // The final target URL
@@ -174,26 +133,14 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
                 allowRedirects: false // Usually false for API proxies
             };
 
-            // Log detailed NTLM request config for node-http-ntlm
-            console.log('[App Proxy] node-http-ntlm Request Options:', JSON.stringify({
-                url: ntlmOptions.url,
-                username: ntlmOptions.username,
-                domain: ntlmOptions.domain,
-                headers: ntlmOptions.headers,
-                body: ntlmOptions.body ? '[Body Present]' : '[No Body]',
-                timeout: ntlmOptions.timeout,
-                allowRedirects: ntlmOptions.allowRedirects
-            }, null, 2));
-
             // Determine method and call appropriate httpntlm function
             const method = req.method.toLowerCase();
-            console.log(`[App Proxy] Making ${method.toUpperCase()} request via node-http-ntlm (proxy)`);
 
             // Wrap httpntlm call in a promise for async/await
             const makeNtlmRequest = () => new Promise((resolve, reject) => {
                 httpntlm[method](ntlmOptions, (err, ntlmRes) => {
                     if (err) {
-                        console.error('[node-http-ntlm Error Raw]:', err);
+                        console.error('[node-http-ntlm Error]:', err.message);
                         // Construct an error object similar to Axios for consistent handling
                         const errorObj = new Error(err.message || 'node-http-ntlm request failed');
                         errorObj.code = err.code;
@@ -219,7 +166,7 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             apiResponse = await makeNtlmRequest();
 
         } else {
-            // ---> No Proxy or invalid credentials - Attempt Direct Connection via standard axios
+            // No Proxy or invalid credentials - Attempt Direct Connection via standard axios
             console.warn('[App Proxy] NTLM proxy credentials not found or incomplete in HTTPS_PROXY. Attempting direct connection...');
             
             // Use baseAxiosConfig AS IS (includes original Authorization header)
@@ -243,25 +190,10 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
                 })
             };
 
-            // Log detailed Direct request config
-            console.log('[App Proxy] Direct Request Config:', JSON.stringify({
-                method: directAxiosConfig.method,
-                url: directAxiosConfig.url,
-                headers: directAxiosConfig.headers, // Should include Authorization here
-                data: directAxiosConfig.data ? (typeof directAxiosConfig.data === 'object' ? '[Object]' : '[Data Present]') : '[No Data]',
-                timeout: directAxiosConfig.timeout,
-                maxRedirects: directAxiosConfig.maxRedirects,
-                httpsAgent_keepAlive: directAxiosConfig.httpsAgent?.options?.keepAlive,
-                httpsAgent_rejectUnauthorized: directAxiosConfig.httpsAgent?.options?.rejectUnauthorized,
-            }, null, 2));
-
-            console.log('[App Proxy] Making request via standard axios (direct)');
             apiResponse = await axios(directAxiosConfig);
         }
         
         // Common response handling
-        console.log(`[App Proxy] Response received with status: ${apiResponse.status}`);
-        
         if (apiResponse.headers) {
             Object.entries(apiResponse.headers).forEach(([key, value]) => {
                 if (key.toLowerCase() !== 'transfer-encoding') {
@@ -272,23 +204,14 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         res.status(apiResponse.status).send(apiResponse.data);
 
     } catch (error) {
-        // Error handling remains largely the same, but context might differ (proxy vs direct)
-        console.error('\n[App Proxy] ---- ERROR OCCURRED ----');
-        console.error(`[App Proxy] Error message: ${error.message}`);
-
-        if (error.code) {
-            console.error(`[App Proxy] Error code: ${error.code}`);
-        }
+        console.error(`[App Proxy] Error: ${error.message}`);
 
         // Check for 407 specifically for proxy errors
         if (error.response && error.response.status === 407) { 
-            console.error('\n[App Proxy] ---- PROXY AUTHENTICATION ERROR (407) ----');
-            console.error('[App Proxy] The proxy server requires authentication and it failed.');
+            console.error('[App Proxy] Proxy authentication error (407)');
             // Check for specific authentication headers
             const proxyAuth = error.response.headers['proxy-authenticate']; // Check this header
             if (proxyAuth) {
-                console.error(`[App Proxy] Proxy-Authenticate header: ${proxyAuth}`);
-                
                 if (proxyAuth.includes('NTLM')) {
                     console.error('[App Proxy] NTLM authentication detected but failed');
                     console.error('[App Proxy] This likely means:');
@@ -314,19 +237,11 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
         }
         // Handle 401 for target server auth issues
         else if (error.response && error.response.status === 401) {
-             console.error('\n[App Proxy] ---- TARGET SERVER AUTHENTICATION ERROR (401) ----');
-             console.error('[App Proxy] The target API server rejected the request (Authorization header)');
-             console.error('[App Proxy] Headers received:', JSON.stringify(error.response.headers, null, 2));
+             console.error('[App Proxy] Target server authentication error (401)');
         }
 
         // Generic error response sending
         if (error.response) {
-            console.error('[App Proxy] Response status:', error.response.status);
-            // Don't log full headers again if already logged above
-            if (error.response.status !== 407 && error.response.status !== 401) {
-                console.error('[App Proxy] Response headers:', JSON.stringify(error.response.headers, null, 2));
-            }
-            
             res.status(error.response.status).json({
                 error: `API Error: ${error.response.status}`,
                 message: error.message,
@@ -334,8 +249,6 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
             });
         } else {
             // Network errors, DNS issues, etc. (could be proxy or direct connection related)
-             console.error('[App Proxy] Error details:', error);
-            
              res.status(500).json({
                  error: 'Connection Error', // More generic now
                  message: error.message,
@@ -346,9 +259,6 @@ app.all(/^\/api\/v1\/(.*)/, async (req, res) => {
 });
 
 // Start server
-console.log('[Debug] About to call app.listen...');
 app.listen(port, () => {
-    console.log('[Debug] app.listen callback entered.');
-    console.log('\n[App Startup] ---- Server Initialized ----');
-    console.log(`[Debug] Server running on port ${port}`);
+    console.log('\n[App Startup] Server running on port ' + port);
 });

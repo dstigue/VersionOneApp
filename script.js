@@ -44,7 +44,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (authTokenRadio.checked) {
             tokenInputSection.style.display = 'block';
         } else if (authBasicRadio.checked) {
-            console.log('Switching to Basic Auth view');
             basicAuthInputSection.style.display = 'block';
         }
     }
@@ -193,8 +192,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (settings.authMethod === 'ntlm') {
             // NTLM auth is handled by the proxy - we don't need to set an auth header here
-            console.log('Using NTLM authentication via proxy');
-            // No error condition to check since auth is handled server-side
         } else {
             if (!suppressStatusUpdate) showStatus('Error: Invalid authentication method selected.', true);
             return null;
@@ -360,8 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Construct the query
         // Fetch Stories (PrimaryWorkitem) first
-        // REMOVED ;AssetState='64' from the where clause
-        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task[AssetState!='Closed'].{Name,Description}&where=Timebox.ID='${timeboxId}'`; 
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task.(Name,Description)&where=Timebox.ID='${timeboxId}'`;
         const storyResponse = await v1ApiCall(storyQuery);
         if (!storyResponse || !storyResponse.Assets) {
             showStatus('No stories found or error fetching stories.', true);
@@ -397,7 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 li.appendChild(label);
 
                 // Display tasks (if any)
-                const tasks = story.Attributes['Children:Task[AssetState!=\'128\']']?.value;
+                const tasks = story.Attributes['Children:Task']?.value;
                 if (tasks && tasks.length > 0) {
                     const taskUl = document.createElement('ul');
                     tasks.forEach(task => {
@@ -469,34 +465,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number';
                 const originalStory = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${storySel}`);
 
-                // Log immediately after await
-                console.log('IMMEDIATE originalStory:', JSON.stringify(originalStory));
-                console.log('IMMEDIATE !originalStory.Attributes evaluation:', !originalStory?.Attributes);
-
                 // Adjust check for single Asset response structure
                 if (!originalStory || !originalStory.Attributes) {
                      console.error(`Failed to fetch details or received invalid data for story ${storyOid}`);
-                     if (originalStory) {
-                        console.error("Received data:", JSON.stringify(originalStory));
-                     }
                      errorCount++;
                      continue; // Skip to next story
                 }
 
                 const sourceAttributes = originalStory.Attributes;
-                console.log('Source Attributes for Story:', JSON.stringify(sourceAttributes, null, 2));
 
                 // --- Determine Super ID to use ---
                 let superIdToUse = null;
                 if (targetParentId) {
                     // User selected a target parent
                     superIdToUse = targetParentId;
-                    console.log(`Using selected Target Parent: ${superIdToUse} for story ${storyOid}`);
                 } else {
                     // No target parent selected, try using the source story's parent
                     if (sourceAttributes.Super && sourceAttributes.Super.value && sourceAttributes.Super.value.idref) {
                         superIdToUse = sourceAttributes.Super.value.idref;
-                        console.log(`Using Source Parent: ${superIdToUse} for story ${storyOid}`);
                     } else {
                         // Source parent is null/missing, AND no target selected. Cannot copy.
                         console.warn(`Skipping story ${storyOid}: Target Parent not selected and original story has no Parent ('Super'). 'Super' is required.`);
@@ -539,7 +525,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
 
                 // 3. Create the new story
-                console.log('Payload for creating new Story:', JSON.stringify(newStoryPayload, null, 2));
                 const createStoryResponse = await v1ApiCall('rest-1.v1/Data/Story', 'POST', newStoryPayload);
                 if (!createStoryResponse || !createStoryResponse.id) {
                     console.error(`Failed to create copy for story ${storyOid}`);
@@ -567,7 +552,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 5. Copy Tasks for the new story
                 for (const sourceTask of originalTasks) {
                     const taskAttributes = sourceTask.Attributes;
-                    console.log(`Processing Task ID: ${sourceTask.id}, Attributes:`, JSON.stringify(taskAttributes, null, 2));
                     const newTaskPayload = {
                         Attributes: {
                             Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
@@ -581,9 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             // }),
                         }
                     };
-                    // ---- ADDED LOGGING for Task Payload ----
-                    console.log('Payload for creating new Task:', JSON.stringify(newTaskPayload, null, 2));
-                    // ---- END LOGGING ----
+                    
                     const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
                     if (!createTaskResponse) {
                          console.warn(`Failed to copy task ${sourceTask.id} for new story ${newStoryId}`);
