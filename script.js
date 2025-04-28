@@ -366,8 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function checkCopyButtonState() {
         const selectedStories = getSelectedStories();
         const targetTimeboxSelected = targetTimeboxSelect.value !== '';
-        const targetParentSelected = targetParentSelect.value !== '';
-        copyButton.disabled = !(selectedStories.length > 0 && targetTimeboxSelected && targetParentSelected);
+        copyButton.disabled = !(selectedStories.length > 0 && targetTimeboxSelected);
     }
 
     async function copySelectedItems() {
@@ -458,6 +457,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
                             AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
                         }),
+                        ...(sourceAttributes.Super && sourceAttributes.Super.value && { Super: { value: sourceAttributes.Super.value.idref, act: 'set' } }),
+                        // --- Add back multi-value relations with strict checks --- 
+                        // --- Restore Owners --- 
+                        ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && { 
+                            Owners: { value: sourceAttributes.Owners.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' } 
+                        }),
                     }
                 };
 
@@ -475,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 4. Fetch original tasks separately - ensure sel includes Owners
                 let originalTasks = []; // Declare with let outside
                 // Select desired task attributes
-                const taskSel = 'Name,Description,Category,Owners,DetailEstimate,ToDo,Estimate,Order'; // Make sure Owners is here
+                const taskSel = 'Name,Description,Category,Owners,ToDo'; // Make sure Owners is here
                 // ---- Simplify WHERE clause for debugging ----
                 const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
                 // const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}';AssetState!=128;AssetState!=208`);
@@ -495,19 +500,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         Attributes: {
                             Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
                             Parent: { value: newStoryId, act: 'set' }, // Link to NEW story
-                            Timebox: { value: targetTimeboxId, act: 'set' }, // Assign to target timebox
                             ...(taskAttributes.Description && { Description: { value: taskAttributes.Description.value, act: 'set' } }),
                             ...(taskAttributes.Category?.value?.idref && { Category: { value: taskAttributes.Category.value.idref, act: 'set' } }),
-                            ...(taskAttributes.DetailEstimate?.value !== null && { DetailEstimate: { value: taskAttributes.DetailEstimate.value, act: 'set' } }),
-                            ...(taskAttributes.ToDo?.value !== null && { ToDo: { value: taskAttributes.ToDo.value, act: 'set' } }),
-                            ...(taskAttributes.Estimate?.value !== null && { Estimate: { value: taskAttributes.Estimate.value, act: 'set' } }),
-                            ...(taskAttributes.Order?.value && { Order: { value: taskAttributes.Order.value, act: 'set' } }),
                             // --- Ensure Task Owners copy uses strict check (already done, verifying) ---
-                            ...(taskAttributes.Owners && taskAttributes.Owners.value && Array.isArray(taskAttributes.Owners.value) && taskAttributes.Owners.value.length > 0 && { 
-                                Owners: { value: taskAttributes.Owners.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' } 
-                            }),
+                            // --- Keep Owners commented out to avoid 500 error ---
+                            // ...(taskAttributes.Owners && taskAttributes.Owners.value && Array.isArray(taskAttributes.Owners.value) && taskAttributes.Owners.value.length > 0 && { 
+                            //     Owners: { value: taskAttributes.Owners.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' } 
+                            // }),
                         }
                     };
+                    // ---- ADDED LOGGING for Task Payload ----
+                    console.log('Payload for creating new Task:', JSON.stringify(newTaskPayload, null, 2));
+                    // ---- END LOGGING ----
                     const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
                     if (!createTaskResponse) {
                          console.warn(`Failed to copy task ${sourceTask.id} for new story ${newStoryId}`);
