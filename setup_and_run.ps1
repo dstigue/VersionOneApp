@@ -1,18 +1,39 @@
 # PowerShell Script to Setup and Run the VersionOne Story Copier Server
+Write-Host "Script execution started."
 
-# --- Administrator Check ---
-if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
-    Write-Warning "This script needs to run as Administrator. Attempting to relaunch..."
-    try {
-        # Relaunch PowerShell as admin, passing the current script file path
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File ""$($MyInvocation.MyCommand.Path)"""
-        Exit # Exit the current non-admin instance
-    } catch {
-        Write-Error "Failed to relaunch as Administrator. Please run the script manually as Administrator."
+param(
+    # Internal flag to indicate the script was relaunched for elevation
+    [switch]$Relaunched
+)
+
+# --- Elevation Check ---
+$IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
+
+if (-NOT $IsElevated) {
+    # Check if the -Relaunched switch was explicitly passed
+    if ($PSBoundParameters.ContainsKey('Relaunched')) {
+        # If we were relaunched but are still not elevated, elevation failed.
+        Write-Error "Failed to elevate privileges after relaunch. Please run the script manually using 'Run as administrator'."
         Exit 1
+    } else {
+        # Not elevated and not relaunched yet, attempt to relaunch.
+        Write-Warning "This script requires elevated privileges. Attempting to relaunch with elevation..."
+        try {
+            # Relaunch PowerShell as admin, passing the current script file path and the -Relaunched switch
+            $scriptPath = $MyInvocation.MyCommand.Path
+            $arguments = "-NoProfile -ExecutionPolicy Bypass -File ""$scriptPath"" -Relaunched"
+            Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments
+            Write-Host "Exiting original non-elevated process."
+            Exit # Exit the current non-elevated instance
+        } catch {
+            Write-Error "Failed to start relaunch process with elevated privileges. Please run the script manually using 'Run as administrator'. Error: $($_.Exception.Message)"
+            Exit 1
+        }
     }
 }
-# Script continues here if running as Administrator
+
+# Script continues here if running with elevated privileges
+Write-Host "Running with elevated privileges." -ForegroundColor Green
 
 # Exit script immediately if any command fails
 # $ErrorActionPreference = 'Stop' # Uncomment this for stricter error handling if desired
