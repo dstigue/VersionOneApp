@@ -1,5 +1,19 @@
 # PowerShell Script to Setup and Run the VersionOne Story Copier Server
 
+# --- Administrator Check ---
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
+    Write-Warning "This script needs to run as Administrator. Attempting to relaunch..."
+    try {
+        # Relaunch PowerShell as admin, passing the current script file path
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File ""$($MyInvocation.MyCommand.Path)"""
+        Exit # Exit the current non-admin instance
+    } catch {
+        Write-Error "Failed to relaunch as Administrator. Please run the script manually as Administrator."
+        Exit 1
+    }
+}
+# Script continues here if running as Administrator
+
 # Exit script immediately if any command fails
 # $ErrorActionPreference = 'Stop' # Uncomment this for stricter error handling if desired
 

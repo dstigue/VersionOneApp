@@ -547,9 +547,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchTimeboxes() {
         showStatus('Fetching timeboxes...');
+
+        // Calculate the date 6 months ago
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        // Format as YYYY-MM-DD
+        const year = sixMonthsAgo.getFullYear();
+        const month = String(sixMonthsAgo.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const day = String(sixMonthsAgo.getDate()).padStart(2, '0');
+        const sixMonthsAgoDateString = `${year}-${month}-${day}`;
+
         // Fetch only active timeboxes - ADDED BeginDate, EndDate, Owner.Name, Schedule.Name to sel
         const timeboxSelectFields = 'Name,BeginDate,EndDate,Owner.Name,Schedule.Name';
-        const timeboxes = await v1ApiCall(`rest-1.v1/Data/Timebox?sel=${timeboxSelectFields}`);
+        // Add the where clause for the date filter
+        const timeboxQuery = `rest-1.v1/Data/Timebox?sel=${timeboxSelectFields}&where=BeginDate>='${sixMonthsAgoDateString}'`;
+
+        const timeboxes = await v1ApiCall(timeboxQuery);
         if (timeboxes) {
             populateTimeboxSelect(sourceTimeboxSelect, timeboxes);
             populateTimeboxSelect(targetTimeboxSelect, timeboxes);
@@ -611,14 +624,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Display tasks (if any)
                 const tasks = story.Attributes['Children:Task']?.value;
-                if (tasks && tasks.length > 0) {
+                const taskNames = story.Attributes['Children:Task.Name']?.value; // Get the array of names
+
+                if (tasks && tasks.length > 0 && taskNames && taskNames.length === tasks.length) { // Check both arrays exist and match length
                     const taskUl = document.createElement('ul');
-                    tasks.forEach(task => {
+                    tasks.forEach((taskRef, index) => { // Iterate with index
                         const taskLi = document.createElement('li');
-                        const taskName = task.Attributes?.Name?.value || 'Unnamed Task';
+                        const taskName = taskNames[index] || 'Unnamed Task'; // Get name by index
+                        const taskIdRef = taskRef.idref; // Get the actual idref
                         // Store task ID and necessary info for copying if needed later
                         taskLi.textContent = `Task: ${taskName}`;
-                        taskLi.dataset.taskId = task.id;
+                        if (taskIdRef) { // Only set dataset if idref exists
+                           taskLi.dataset.taskId = taskIdRef;
+                        }
                         taskUl.appendChild(taskLi);
                     });
                     li.appendChild(taskUl);
