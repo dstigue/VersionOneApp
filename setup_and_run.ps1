@@ -3,14 +3,12 @@
 # Exit script immediately if any command fails
 # $ErrorActionPreference = 'Stop' # Uncomment this for stricter error handling if desired
 
-Write-Host "Starting setup and run script..." -ForegroundColor Cyan
+Write-Host "Starting setup..." -ForegroundColor Cyan
 
 # --- Check for HTTPS_PROXY Environment Variable ---
-Write-Host "Checking for HTTPS_PROXY environment variable..." -ForegroundColor Cyan
 $httpsProxy = [System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "Process")
 
 if (-not $httpsProxy) {
-    Write-Host "HTTPS_PROXY environment variable not found." -ForegroundColor Yellow
     $setupProxy = Read-Host "Do you want to set up HTTPS_PROXY for NTLM authentication? (y/n)"
     
     if ($setupProxy -eq 'y' -or $setupProxy -eq 'Y') {
@@ -56,109 +54,96 @@ if (-not $httpsProxy) {
         # Set the environment variable for the current process
         [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyValue, "Process")
         
-        Write-Host "HTTPS_PROXY environment variable set successfully for this session." -ForegroundColor Green
-        Write-Host "NOTE: This setting will only persist for the current PowerShell session." -ForegroundColor Yellow
-        
         # Optionally, ask if they want to set it permanently
         $setPermanent = Read-Host "Do you want to set this permanently for your user account? (y/n)"
         if ($setPermanent -eq 'y' -or $setPermanent -eq 'Y') {
             try {
                 [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyValue, "User")
-                Write-Host "HTTPS_PROXY environment variable set permanently for your user account." -ForegroundColor Green
             } catch {
                 Write-Host "Failed to set permanent environment variable: $_" -ForegroundColor Red
             }
         }
-    } else {
-        Write-Host "Continuing without setting HTTPS_PROXY." -ForegroundColor Yellow
     }
-} else {
-    Write-Host "HTTPS_PROXY environment variable is already set." -ForegroundColor Green
 }
 
 # --- Check for Node.js --- 
-Write-Host "Checking for Node.js installation..."
 $nodeExists = $false
-Try {
+try {
     # Try executing node -v. Redirect output to null, check exit code.
     node --version *> $null 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Node.js is already installed." -ForegroundColor Green
         $nodeExists = $true
     }
-} Catch {
-    # Catch block might trigger if 'node' command isn't recognized at all
-    Write-Host "Node.js command not found initially."
+} catch {
+    # Node.js not installed or not in PATH
 }
 
 # --- Install Node.js via winget if needed --- 
 if (-not $nodeExists) {
-    Write-Host "Node.js not found. Attempting installation via winget..."
-    # Check if winget exists
-    Try {
+    Write-Host "Node.js not found. Attempting installation via winget..." -ForegroundColor Yellow
+    try {
         winget --version *> $null
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Winget command not found or failed. Cannot automatically install Node.js."
-            Write-Error "Please install Node.js manually from https://nodejs.org/ and then run this script again."
+            Write-Error "Winget command not found. Please install Node.js manually from https://nodejs.org/"
             Exit 1
         }
 
-        Write-Host "Attempting to install Node.js using winget..." -ForegroundColor Yellow
-        Write-Host "NOTE: This might require Administrator privileges or user interaction."
         # Attempt to install Node.js silently
         winget install OpenJS.NodeJS --accept-package-agreements --accept-source-agreements
         
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Winget failed to install Node.js (Exit Code: $LASTEXITCODE)."
-            Write-Error "Try running this script as Administrator. If that fails, please install Node.js manually from https://nodejs.org/"
+            Write-Error "Winget failed to install Node.js. Please install Node.js manually from https://nodejs.org/"
             Exit 1
         }
 
-        Write-Host "Node.js installation via winget potentially successful." -ForegroundColor Green
-        Write-Host "IMPORTANT: Please CLOSE this terminal and RE-RUN the script in a NEW terminal window to ensure Node.js is available in the system PATH." -ForegroundColor Yellow
+        Write-Host "Node.js installation completed. Please CLOSE this terminal and RE-RUN the script in a NEW terminal window." -ForegroundColor Yellow
         Exit 0 # Exit cleanly, requiring user to restart script in new terminal
 
-    } Catch {
-        Write-Error "Error checking/running winget. Cannot automatically install Node.js."
-        Write-Error "Please install Node.js manually from https://nodejs.org/ and then run this script again."
+    } catch {
+        Write-Error "Error installing Node.js. Please install manually from https://nodejs.org/"
         Exit 1
     }
 }
 
 # --- Navigate to Script Directory --- 
-# $PSScriptRoot is the directory where the script itself resides
 if ($PSScriptRoot) {
-    Write-Host "Changing directory to script location: $PSScriptRoot"
     Set-Location $PSScriptRoot
-} else {
-    Write-Warning "Could not determine script directory. Assuming current directory is correct."
 }
 
 # --- Check for package.json --- 
 if (-not (Test-Path -Path .\package.json -PathType Leaf)) {
-    Write-Error "package.json not found in the current directory ($PWD). Cannot proceed."
+    Write-Error "package.json not found in the current directory. Cannot proceed."
     Exit 1
 }
-
-<# # --- Run npm install --- 
-Write-Host "Running 'npm install' to install dependencies..."
-npm install
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "'npm install' failed. Please check the errors above."
-    Exit 1
-}
-Write-Host "'npm install' completed successfully." -ForegroundColor Green #>
 
 # --- Run npm start --- 
-Write-Host "Starting the server via 'npm start'... (Press Ctrl+C to stop the server)" -ForegroundColor Cyan
-npm start
+Write-Host "Starting the server..." -ForegroundColor Cyan
+Write-Host "The application will be available at http://localhost:3000" -ForegroundColor Cyan
 
-# Execution will likely pause here while the server runs.
-# The script will continue here if npm start fails immediately or the server is stopped.
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "'npm start' failed or the server stopped with an error."
-} else {
-    Write-Host "Server stopped."
+# Start the server in a job so we can open the browser
+$serverJob = Start-Job -ScriptBlock { 
+    param($workingDir)
+    Set-Location $workingDir
+    npm start 
+} -ArgumentList $PWD
+
+# Wait a moment for the server to initialize
+Start-Sleep -Seconds 3
+
+# Open the browser
+Start-Process "http://localhost:3000"
+
+# Display message about how to exit
+Write-Host "Server is running. Press Ctrl+C to stop the server when finished." -ForegroundColor Cyan
+
+# Wait for the job to complete (when user presses Ctrl+C)
+try {
+    Receive-Job -Job $serverJob -Wait
+    Stop-Job -Job $serverJob
+    Remove-Job -Job $serverJob
+} catch {
+    Write-Host "Server stopped." -ForegroundColor Yellow
 }
 
+# Execution will continue here when server is stopped.
 Write-Host "Script finished."

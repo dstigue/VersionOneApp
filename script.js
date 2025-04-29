@@ -279,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                  authHeaderValue = `Basic ${btoa(`${settings.username}:${settings.password}`)}`;
             } catch (e) {
-                console.error("Error base64 encoding credentials:", e);
+                console.error("Error encoding credentials");
                 if (!suppressStatusUpdate) showStatus('Error encoding credentials for Basic Auth.', true);
                 return null;
             }
@@ -317,14 +317,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(proxyUrl, options);
 
             if (!response.ok) {
-                let errorMsg = `API Error (via proxy): ${response.status} ${response.statusText}`;
+                let errorMsg = `API Error: ${response.status} ${response.statusText}`;
                 // --- Read body as text first to avoid double-read ---
                 const errorBodyText = await response.text(); 
                 detailedError = errorBodyText; // Default detail is the raw text
                 try {
                     // --- Try parsing the text as JSON --- 
                     const errorData = JSON.parse(errorBodyText);
-                    console.error('API Error Response JSON (via proxy):', errorData);
                     // Extract details if JSON parsing succeeded
                     if (errorData.message) {
                         detailedError = errorData.message;
@@ -339,7 +338,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (e) {
                     // JSON parsing failed, use the raw text already captured
-                    console.error('Non-JSON API Error Response (via proxy):', errorBodyText);
                     if (detailedError) { // Add raw text if we didn't find a specific message
                         errorMsg += ` - ${detailedError}`;
                     }
@@ -353,10 +351,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             return await response.json();
         } catch (error) {
-            console.error('API Call Failed:', error);
+            console.error('API Call Failed');
             // Use settingsStatus for connection test errors, statusMessage otherwise
             const targetStatusElement = suppressStatusUpdate ? settingsStatus : statusMessage;
-            const displayMessage = detailedError ? `Connection failed: ${detailedError} (${error.message.split(' - ')[0]})` : `Error: ${error.message}`;
+            const displayMessage = detailedError ? `Connection failed: ${detailedError}` : `Error: ${error.message}`;
 
             if (suppressStatusUpdate) {
                 // For connection test, always update settingsStatus
@@ -570,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
             copyButton.disabled = true;
             return;
         }
-        showStatus(`Fetching stories for ${timeboxId}...`);
+        showStatus(`Fetching stories...`);
         storiesListDiv.innerHTML = ''; // Clear previous list
         copyButton.disabled = true;
 
@@ -673,7 +671,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get target timebox scope
         let targetTimeboxScope = null;
         try {
-            showStatus('Fetching target timebox scope information...');
+            showStatus('Fetching target timebox information...');
             // Query to get the scope of the target timebox
             const timeboxQuery = `rest-1.v1/Data/Timebox/${targetTimeboxId.split(':')[1]}?sel=Scope.ID`;
             const timeboxData = await v1ApiCall(timeboxQuery);
@@ -681,12 +679,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (timeboxData && timeboxData.Attributes && timeboxData.Attributes['Scope.ID'] && 
                 timeboxData.Attributes['Scope.ID'].value) {
                 targetTimeboxScope = timeboxData.Attributes['Scope.ID'].value;
-                showStatus(`Target timebox scope identified: ${targetTimeboxScope}`);
             } else {
                 showStatus('Could not determine the scope of the target timebox. Copy may fail.', true);
             }
         } catch (error) {
-            console.error('Error fetching target timebox scope:', error);
+            console.error('Error fetching target timebox scope');
             showStatus('Error fetching target timebox scope. Copy may fail.', true);
         }
 
@@ -699,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyOid = storyInfo.oid;
             const storyNumericId = storyInfo.numericId;
             try {
-                showStatus(`Processing story ${storyOid} (ID: ${storyNumericId})...`);
+                showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
                 // 1. Fetch details using the NUMERIC ID and a comprehensive sel parameter
                 const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number';
                 const originalStory = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${storySel}`);
