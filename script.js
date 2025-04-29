@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const basicAuthInputSection = document.getElementById('basic-auth-input-section');
     const v1UsernameInput = document.getElementById('v1-username');
     const v1PasswordInput = document.getElementById('v1-password');
+    // Story Team Filter element
+    const storyTeamFilterSelect = document.getElementById('story-team-filter');
 
     // Create filter elements
     const sourceOwnerFilterSelect = document.createElement('select');
@@ -58,7 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
     sourceFiltersDiv.appendChild(document.createElement('div')).innerHTML = '<div class="filter-label">Filter by:</div>';
     sourceFiltersDiv.appendChild(sourceOwnerGroup);
     sourceFiltersDiv.appendChild(sourceScheduleGroup);
-    sourceTimeboxContainer.insertBefore(sourceFiltersDiv, sourceTimeboxSelect.nextSibling);
+    // Insert into the new placeholder div
+    const sourceFiltersContainer = document.getElementById('source-filters-container');
+    sourceFiltersContainer.appendChild(sourceFiltersDiv);
+    // sourceTimeboxContainer.insertBefore(sourceFiltersDiv, sourceTimeboxSelect.nextSibling); // Old insertion point
 
     const targetTimeboxContainer = targetTimeboxSelect.parentElement;
     const targetFiltersDiv = document.createElement('div');
@@ -78,7 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
     targetFiltersDiv.appendChild(document.createElement('div')).innerHTML = '<div class="filter-label">Filter by:</div>';
     targetFiltersDiv.appendChild(targetOwnerGroup);
     targetFiltersDiv.appendChild(targetScheduleGroup);
-    targetTimeboxContainer.insertBefore(targetFiltersDiv, targetTimeboxSelect.nextSibling);
+    // Insert into the new placeholder div
+    const targetFiltersContainer = document.getElementById('target-filters-container');
+    targetFiltersContainer.appendChild(targetFiltersDiv);
+    // targetTimeboxContainer.insertBefore(targetFiltersDiv, targetTimeboxSelect.nextSibling); // Old insertion point
 
     // Create a style element for the filters
     const styleElement = document.createElement('style');
@@ -114,6 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Store all timeboxes for filtering
     let allTimeboxes = [];
+    // Store currently fetched stories for team filtering
+    let currentStories = [];
 
     let settings = {
         baseUrl: '',
@@ -575,19 +585,124 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- New: Function to Populate Story Team Filter ---
+    function populateStoryTeamFilter(stories) {
+        const teams = new Set();
+        if (stories && stories.length > 0) {
+            stories.forEach(story => {
+                const teamName = story.Attributes['Team.Name']?.value;
+                if (teamName) {
+                    teams.add(teamName);
+                }
+            });
+        }
+        
+        // Clear previous options except the default
+        storyTeamFilterSelect.innerHTML = '<option value="">All Teams</option>'; 
+        
+        Array.from(teams).sort().forEach(team => {
+            const option = document.createElement('option');
+            option.value = team;
+            option.textContent = team;
+            storyTeamFilterSelect.appendChild(option);
+        });
+        
+        // Disable filter if no teams found
+        storyTeamFilterSelect.disabled = teams.size === 0;
+    }
+    // --- End New Function ---
+
+    // --- New: Function to Display Stories (Handles Team Filtering) ---
+    function displayStories(stories, teamFilter) {
+        storiesListDiv.innerHTML = ''; // Clear previous list
+        const ul = document.createElement('ul');
+        let displayedCount = 0;
+
+        stories.forEach(story => {
+            const storyTeamName = story.Attributes['Team.Name']?.value || '';
+            // Apply team filter
+            if (teamFilter && storyTeamName !== teamFilter) {
+                return; // Skip story if it doesn't match the selected team filter
+            }
+
+            displayedCount++;
+            const li = document.createElement('li');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = story.id; // Keep full OID as value for potential reference
+            checkbox.id = `story-${story.id}`;
+            // Store numeric ID in a data attribute
+            const numericId = story.id.split(':')[1];
+            if (numericId) {
+                checkbox.dataset.numericId = numericId;
+            } else {
+                console.warn(`Could not extract numeric ID from ${story.id}`);
+            }
+            checkbox.addEventListener('change', checkCopyButtonState);
+
+            const label = document.createElement('label');
+            const storyName = story.Attributes?.Name?.value || 'Unnamed Story';
+            const storyNumber = story.Attributes?.Number?.value || '';
+            label.htmlFor = checkbox.id;
+            // Include team name in the display
+            label.textContent = `${storyNumber} - ${storyName} (${storyTeamName || 'No Team'})`; 
+
+            li.appendChild(checkbox);
+            li.appendChild(label);
+
+            // Display tasks (if any)
+            const tasks = story.Attributes['Children:Task']?.value;
+            const taskNames = story.Attributes['Children:Task.Name']?.value; 
+
+            if (tasks && tasks.length > 0 && taskNames && taskNames.length === tasks.length) {
+                const taskUl = document.createElement('ul');
+                tasks.forEach((taskRef, index) => {
+                    const taskLi = document.createElement('li');
+                    const taskName = taskNames[index] || 'Unnamed Task'; 
+                    const taskIdRef = taskRef.idref; 
+                    taskLi.textContent = `Task: ${taskName}`;
+                    if (taskIdRef) {
+                       taskLi.dataset.taskId = taskIdRef;
+                    }
+                    taskUl.appendChild(taskLi);
+                });
+                li.appendChild(taskUl);
+            }
+
+            ul.appendChild(li);
+        });
+
+        if (ul.hasChildNodes()) {
+            storiesListDiv.appendChild(ul);
+            showStatus(`${displayedCount} stories loaded/filtered. Select stories to copy.`);
+        } else if (teamFilter) {
+             storiesListDiv.innerHTML = '<p>No stories match the selected team filter.</p>';
+             showStatus('No stories match filter.');
+        } else {
+            // This case shouldn't be reached if the initial check passed, but good fallback
+             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
+             showStatus('No active stories found.');
+        }
+        checkCopyButtonState(); // Update button state
+    }
+    // --- End New Function ---
+
     async function fetchStoriesAndTasks(timeboxId) {
         if (!timeboxId) {
             storiesListDiv.innerHTML = '<p>Please select a source timebox first.</p>';
             copyButton.disabled = true;
+            currentStories = []; // Clear stored stories
+            populateStoryTeamFilter(currentStories); // Clear team filter
             return;
         }
         showStatus(`Fetching stories...`);
         storiesListDiv.innerHTML = ''; // Clear previous list
         copyButton.disabled = true;
+        currentStories = []; // Clear stored stories before fetch
+        populateStoryTeamFilter(currentStories); // Clear team filter
 
-        // Construct the query
-        // Fetch Stories (PrimaryWorkitem) first
-        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Description&where=Timebox.ID='${timeboxId}'`;
+        // Construct the query - Added Team.Name
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Description,Team.Name&where=Timebox.ID='${timeboxId}'`;
         const storyResponse = await v1ApiCall(storyQuery);
         if (!storyResponse || !storyResponse.Assets) {
             showStatus('No stories found or error fetching stories.', true);
@@ -595,65 +710,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (storyResponse && storyResponse.Assets && storyResponse.Assets.length > 0) {
-            const ul = document.createElement('ul');
-            storyResponse.Assets.forEach(story => {
-                const li = document.createElement('li');
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.value = story.id; // Keep full OID as value for potential reference
-                checkbox.id = `story-${story.id}`;
-                // Store numeric ID in a data attribute
-                const numericId = story.id.split(':')[1];
-                if (numericId) {
-                    checkbox.dataset.numericId = numericId;
-                } else {
-                    console.warn(`Could not extract numeric ID from ${story.id}`);
-                    // Optionally disable checkbox or handle error
-                }
-                checkbox.addEventListener('change', checkCopyButtonState);
-
-                const label = document.createElement('label');
-                const storyName = story.Attributes?.Name?.value || 'Unnamed Story';
-                const storyNumber = story.Attributes?.Number?.value || '';
-                label.htmlFor = checkbox.id;
-                label.textContent = `${storyNumber} - ${storyName}`;
-
-                li.appendChild(checkbox);
-                li.appendChild(label);
-
-                // Display tasks (if any)
-                const tasks = story.Attributes['Children:Task']?.value;
-                const taskNames = story.Attributes['Children:Task.Name']?.value; // Get the array of names
-
-                if (tasks && tasks.length > 0 && taskNames && taskNames.length === tasks.length) { // Check both arrays exist and match length
-                    const taskUl = document.createElement('ul');
-                    tasks.forEach((taskRef, index) => { // Iterate with index
-                        const taskLi = document.createElement('li');
-                        const taskName = taskNames[index] || 'Unnamed Task'; // Get name by index
-                        const taskIdRef = taskRef.idref; // Get the actual idref
-                        // Store task ID and necessary info for copying if needed later
-                        taskLi.textContent = `Task: ${taskName}`;
-                        if (taskIdRef) { // Only set dataset if idref exists
-                           taskLi.dataset.taskId = taskIdRef;
-                        }
-                        taskUl.appendChild(taskLi);
-                    });
-                    li.appendChild(taskUl);
-                }
-
-                ul.appendChild(li);
-            });
-            storiesListDiv.appendChild(ul);
-            showStatus('Stories loaded. Select stories to copy.');
-        } else if (storyResponse) { // Request succeeded but no stories found
+        if (storyResponse.Assets.length > 0) {
+            currentStories = storyResponse.Assets; // Store fetched stories
+            populateStoryTeamFilter(currentStories); // Populate the team filter dropdown
+            displayStories(currentStories, storyTeamFilterSelect.value); // Initial display using current filter value
+        } else { 
             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
             showStatus('No active stories found.');
-        } else { // API call failed
-            storiesListDiv.innerHTML = '<p>Failed to load stories. Check console.</p>';
-            // Status already set by v1ApiCall failure
+            checkCopyButtonState(); 
         }
-        checkCopyButtonState(); // Update button state initially
     }
 
     function getSelectedStories() {
@@ -715,8 +780,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyNumericId = storyInfo.numericId;
             try {
                 showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
-                // 1. Fetch details using the NUMERIC ID and a comprehensive sel parameter
-                const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number';
+                 // 1. Fetch details including AssetState
+                const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number,AssetState'; // Added AssetState
                 const originalStory = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${storySel}`);
 
                 // Adjust check for single Asset response structure
@@ -727,6 +792,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const sourceAttributes = originalStory.Attributes;
+                const originalStoryNumber = sourceAttributes.Number?.value || storyOid;
+
+                // --- Close Original Story If Not Already Closed (using Operation) ---
+                const closedStateId = 128; // Common AssetState for 'Closed'. Adjust if your V1 instance uses a different ID.
+                const closeOperationName = 'QuickClose'; // Use QuickClose as requested
+
+                if (sourceAttributes.AssetState?.value !== closedStateId) {
+                    showStatus(`Attempting to close original story ${originalStoryNumber} via operation '${closeOperationName}'...`);
+                    try {
+                        // Execute the QuickClose operation
+                        const closeResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?op=${closeOperationName}`, 'POST', null); 
+                        
+                        if (!closeResponse || !closeResponse.id) { 
+                             console.error(`Operation '${closeOperationName}' may have failed for story ${originalStoryNumber}. Copy will proceed.`);
+                             showStatus(`Warning: Operation '${closeOperationName}' may have failed for story ${originalStoryNumber}. Copying anyway...`, true);
+                        } else {
+                            showStatus(`Original story ${originalStoryNumber} closed via operation. Proceeding with copy...`);
+                        }
+                    } catch (closeError) {
+                        console.error(`Error executing operation '${closeOperationName}' on story ${originalStoryNumber}:`, closeError);
+                        showStatus(`Warning: Error closing original story ${originalStoryNumber} via operation. Copying anyway...`, true);
+                         // Continue with copy attempt even if closing failed
+                    }
+                } else {
+                     showStatus(`Original story ${originalStoryNumber} already closed. Proceeding with copy...`);
+                }
+                // --- End Close Original Story ---
 
                 // --- Determine Super ID to use ---
                 let superIdToUse = null;
@@ -750,11 +842,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newStoryPayload = {
                     Attributes: {
                         // Required fields
-                        Name: { value: `Copy of ${sourceAttributes.Name?.value || 'Unnamed Story'}`, act: 'set' },
+                        Name: { value: sourceAttributes.Name?.value || 'Unnamed Story', act: 'set' },
                         Timebox: { value: targetTimeboxId, act: 'set' },
-                        
-                        // Only include Super if we have a value for it
-                        ...(!skipSuperAttribute && superIdToUse && { Super: { value: superIdToUse, act: 'set' } }),
+                        Super: { value: superIdToUse, act: 'set' },
 
                         // Use target timebox scope if available, otherwise try to use original scope
                         ...(targetTimeboxScope ? 
@@ -774,10 +864,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
                         }),
                         
-                        // --- Restore Owners --- 
-                        ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && { 
-                            Owners: { value: sourceAttributes.Owners.value.map(o => o.idref), act: 'add' } 
-                        }),
+                        // --- Restore Owners (handle single vs multiple) --- 
+                        ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && (() => {
+                            const validOwnerIdRefs = sourceAttributes.Owners.value
+                                .filter(o => o && o.idref) // Basic check for owner object and idref
+                                .map(o => o.idref);
+                                
+                            if (validOwnerIdRefs.length > 0) {
+                                // Use 'add' but provide a single string if only one owner, or array if multiple
+                                return { Owners: { act: 'add', value: validOwnerIdRefs.length === 1 ? validOwnerIdRefs[0] : validOwnerIdRefs } };
+                            } else {
+                                return {}; // Return empty object if no valid owners found after filtering
+                            }
+                        })()),
                     }
                 };
 
@@ -791,9 +890,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newStoryId = createStoryResponse.id;
                 showStatus(`Created new story ${newStoryId}. Fetching original tasks...`);
 
-                // 4. Fetch original tasks separately
+                // 4. Fetch original tasks separately, including Status.ID and ToDo
                 let originalTasks = [];
-                const taskSel = 'Name,Description,Category,Owners,ToDo';
+                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID'; // Added Status.ID
                 
                 try {
                     const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
@@ -816,8 +915,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (const sourceTask of originalTasks) {
                     try {
                         const taskAttributes = sourceTask.Attributes;
-                        
-                        // Build task payload with essential fields
+                        const originalTaskId = sourceTask.id; 
+                        // const originalTaskNumericId = originalTaskId.split(':')[1]; // No longer needed for updating original task
+                        // const originalTaskName = taskAttributes.Name?.value || originalTaskId; // No longer needed for status messages
+
+                        // Build task payload for the NEW task
                         const newTaskPayload = {
                             Attributes: {
                                 Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
@@ -984,6 +1086,8 @@ document.addEventListener('DOMContentLoaded', () => {
     sourceTimeboxSelect.addEventListener('change', () => {
         storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; // Clear stories when source changes
         copyButton.disabled = true; // Disable copy button
+        currentStories = []; // Clear stories
+        populateStoryTeamFilter(currentStories); // Clear team filter
     });
     targetTimeboxSelect.addEventListener('change', checkCopyButtonState);
     targetParentSelect.addEventListener('change', checkCopyButtonState);
@@ -1020,6 +1124,12 @@ document.addEventListener('DOMContentLoaded', () => {
         populateTimeboxSelect(targetTimeboxSelect, allTimeboxes);
         checkCopyButtonState();
     });
+
+    // --- New: Event Listener for Story Team Filter ---
+    storyTeamFilterSelect.addEventListener('change', () => {
+        displayStories(currentStories, storyTeamFilterSelect.value);
+    });
+    // --- End New Event Listener ---
 
     // Add this new function to handle parallel loading with timeout
     async function loadInitialData() {
