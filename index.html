@@ -120,10 +120,9 @@
             <div style="margin-top: 10px;">
                  <button id="load-stories">Load Stories</button>
                  <!-- Story Owner Filter -->
-                 <label for="story-owner-filter" style="margin-left: 10px;">Filter by Owner:</label>
-                 <select id="story-owner-filter" class="filter-select" style="min-width: 150px;">
-                     <option value="">All Owners</option>
-                     <!-- Owners will be populated here -->
+                 <label for="story-owner-filter" style="margin-left: 10px;">Filter by Owner(s):</label>
+                 <select id="story-owner-filter" class="filter-select" style="min-width: 150px; height: 70px; vertical-align: top;" multiple>
+                     <!-- Owners will be populated here - Default option removed as it's less intuitive for multi-select -->
                  </select>
             </div>
         </div>

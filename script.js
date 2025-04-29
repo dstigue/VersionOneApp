@@ -585,7 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Changed: Function to Populate Story Owner Filter ---
+    // --- Changed: Function to Populate Story Owner Filter (for Multi-select) ---
     function populateStoryOwnerFilter(stories) {
         const owners = new Set();
         if (stories && stories.length > 0) {
@@ -602,8 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        // Clear previous options except the default
-        storyOwnerFilterSelect.innerHTML = '<option value="">All Owners</option>'; 
+        // Clear previous options
+        storyOwnerFilterSelect.innerHTML = ''; 
         
         Array.from(owners).sort().forEach(owner => {
             const option = document.createElement('option');
@@ -611,17 +611,18 @@ document.addEventListener('DOMContentLoaded', () => {
             option.textContent = owner;
             storyOwnerFilterSelect.appendChild(option);
         });
-        
-        // Disable filter if no owners found
-        storyOwnerFilterSelect.disabled = owners.size === 0;
     }
     // --- End Changed Function ---
 
-    // --- Changed: Function to Display Stories (Handles Owner Filtering) ---
-    function displayStories(stories, ownerFilter) {
+    // --- Changed: Function to Display Stories (Handles Multi-Owner Filtering) ---
+    function displayStories(stories) {
         storiesListDiv.innerHTML = ''; // Clear previous list
         const ul = document.createElement('ul');
         let displayedCount = 0;
+
+        // Get selected owners from the multi-select filter
+        const selectedOwners = Array.from(storyOwnerFilterSelect.selectedOptions).map(option => option.value);
+        const isFilterActive = selectedOwners.length > 0;
 
         stories.forEach(story => {
             const storyOwnersValue = story.Attributes['Owners.Name']?.value;
@@ -630,8 +631,15 @@ document.addEventListener('DOMContentLoaded', () => {
                  storyOwnersArray = Array.isArray(storyOwnersValue) ? storyOwnersValue : [storyOwnersValue];
             }
             
-            // Apply owner filter - check if the selected owner is in the story's owner list
-            if (ownerFilter && !storyOwnersArray.includes(ownerFilter)) {
+            // Apply owner filter - check if any of the story's owners are in the selected list
+            let ownerMatch = false;
+            if (!isFilterActive) {
+                ownerMatch = true; // Show all if filter is not active
+            } else {
+                ownerMatch = storyOwnersArray.some(storyOwner => selectedOwners.includes(storyOwner));
+            }
+
+            if (!ownerMatch) {
                 return; // Skip story if it doesn't match the selected owner filter
             }
 
@@ -685,9 +693,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (ul.hasChildNodes()) {
             storiesListDiv.appendChild(ul);
-            showStatus(`${displayedCount} stories loaded/filtered. Select stories to copy.`);
-        } else if (ownerFilter) {
-             storiesListDiv.innerHTML = '<p>No stories match the selected owner filter.</p>';
+            const filterStatus = isFilterActive ? 'filtered' : 'loaded';
+            showStatus(`${displayedCount} stories ${filterStatus}. Select stories to copy.`);
+        } else if (isFilterActive) {
+             storiesListDiv.innerHTML = '<p>No stories match the selected owner filter(s).</p>';
              showStatus('No stories match filter.');
         } else {
             // This case shouldn't be reached if the initial check passed, but good fallback
@@ -724,7 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (storyResponse.Assets.length > 0) {
             currentStories = storyResponse.Assets; // Store fetched stories
             populateStoryOwnerFilter(currentStories); // Populate the owner filter dropdown
-            displayStories(currentStories, storyOwnerFilterSelect.value); // Initial display using current filter value
+            displayStories(currentStories); // Initial display (no filter active yet)
         } else { 
             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
             showStatus('No active stories found.');
@@ -1158,7 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Changed: Event Listener for Story Owner Filter ---
     storyOwnerFilterSelect.addEventListener('change', () => {
-        displayStories(currentStories, storyOwnerFilterSelect.value);
+        displayStories(currentStories); // Re-display stories based on new selection
     });
     // --- End Changed Event Listener ---
 
