@@ -12,12 +12,6 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Log essential proxy environment variables
-console.log('[App Startup] Proxy environment variables:');
-console.log(`  HTTPS_PROXY: ${process.env.HTTPS_PROXY || process.env.https_proxy || 'Not set'}`);
-console.log(`  HTTP_PROXY: ${process.env.HTTP_PROXY || process.env.http_proxy || 'Not set'}`);
-console.log(`  NO_PROXY: ${process.env.NO_PROXY || process.env.no_proxy || 'Not set'}`);
-
 // Middleware to parse JSON bodies 
 app.use(express.json());
 

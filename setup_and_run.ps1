@@ -19,10 +19,33 @@ if (-not $httpsProxy) {
         
         # Get credentials
         $username = Read-Host "Enter your username"
-        $securePassword = Read-Host "Enter your password" -AsSecureString
-        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-        $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) # Clear the password from memory
+        
+        # Get password with confirmation
+        $passwordsMatch = $false
+        while (-not $passwordsMatch) {
+            $securePassword = Read-Host "Enter your password" -AsSecureString
+            $securePasswordConfirm = Read-Host "Confirm your password" -AsSecureString
+            
+            # Convert secure strings for comparison
+            $bstr1 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+            $bstr2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePasswordConfirm)
+            $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr1)
+            $passwordConfirm = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr2)
+            
+            if ($password -eq $passwordConfirm) {
+                $passwordsMatch = $true
+                # Clear confirmation password from memory
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr2)
+            } else {
+                Write-Host "Passwords do not match. Please try again." -ForegroundColor Red
+                # Clear both passwords from memory
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr1)
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr2)
+            }
+        }
+        
+        # Clear main password from memory after we're done with both
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr1)
         
         # Use fixed domain "USA"
         $domain = "USA"
@@ -50,7 +73,7 @@ if (-not $httpsProxy) {
         Write-Host "Continuing without setting HTTPS_PROXY." -ForegroundColor Yellow
     }
 } else {
-    Write-Host "HTTPS_PROXY environment variable is already set: $httpsProxy" -ForegroundColor Green
+    Write-Host "HTTPS_PROXY environment variable is already set." -ForegroundColor Green
 }
 
 # --- Check for Node.js --- 

@@ -761,7 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         // --- Restore Owners --- 
                         ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && { 
-                            Owners: { value: sourceAttributes.Owners.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' } 
+                            Owners: { value: sourceAttributes.Owners.value.map(o => o.idref), act: 'add' } 
                         }),
                     }
                 };
@@ -776,48 +776,103 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newStoryId = createStoryResponse.id;
                 showStatus(`Created new story ${newStoryId}. Fetching original tasks...`);
 
-                // 4. Fetch original tasks separately - ensure sel includes Owners
-                let originalTasks = []; // Declare with let outside
-                // Select desired task attributes
-                const taskSel = 'Name,Description,Category,Owners,ToDo'; // Make sure Owners is here
-                // ---- Simplify WHERE clause for debugging ----
-                const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
-                // const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}';AssetState!=128;AssetState!=208`);
-                // ---- End Simplification ---- 
-                if (tasksResponse && tasksResponse.Assets) {
-                    originalTasks = tasksResponse.Assets; // Assign here
-                    showStatus(`Found ${originalTasks.length} tasks for ${storyOid}. Copying...`);
-                } else {
-                    showStatus(`No active tasks found or failed to fetch tasks for ${storyOid}. Continuing...`);
+                // 4. Fetch original tasks separately
+                let originalTasks = [];
+                const taskSel = 'Name,Description,Category,Owners,ToDo';
+                
+                try {
+                    const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
+                    
+                    if (tasksResponse && tasksResponse.Assets) {
+                        originalTasks = tasksResponse.Assets;
+                        showStatus(`Found ${originalTasks.length} tasks for ${storyOid}. Copying...`);
+                    } else {
+                        showStatus(`No tasks found for ${storyOid}. Continuing...`);
+                    }
+                } catch (error) {
+                    console.error(`Error fetching tasks for story ${storyOid}:`, error);
+                    showStatus(`Warning: Could not fetch tasks for story ${storyOid}. Story was copied without tasks.`, true);
                 }
 
                 // 5. Copy Tasks for the new story
+                let taskSuccessCount = 0;
+                let taskErrorCount = 0;
+                
                 for (const sourceTask of originalTasks) {
-                    const taskAttributes = sourceTask.Attributes;
-                    const newTaskPayload = {
-                        Attributes: {
-                            Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
-                            Parent: { value: newStoryId, act: 'set' }, // Link to NEW story
-                            ...(taskAttributes.Description && { Description: { value: taskAttributes.Description.value, act: 'set' } }),
-                            ...(taskAttributes.Category?.value?.idref && { Category: { value: taskAttributes.Category.value.idref, act: 'set' } }),
-                            // --- Ensure Task Owners copy uses strict check (already done, verifying) ---
-                            // --- Keep Owners commented out to avoid 500 error ---
-                            // ...(taskAttributes.Owners && taskAttributes.Owners.value && Array.isArray(taskAttributes.Owners.value) && taskAttributes.Owners.value.length > 0 && { 
-                            //     Owners: { value: taskAttributes.Owners.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' } 
-                            // }),
+                    try {
+                        const taskAttributes = sourceTask.Attributes;
+                        
+                        // Build task payload with essential fields
+                        const newTaskPayload = {
+                            Attributes: {
+                                Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
+                                Parent: { value: newStoryId, act: 'set' },
+                                
+                                // Handle optional fields with appropriate null checks
+                                ...(taskAttributes.Description?.value && { 
+                                    Description: { value: taskAttributes.Description.value, act: 'set' } 
+                                }),
+                                
+                                // Handle Category with ID reference checks
+                                ...(taskAttributes.Category?.value?.idref && { 
+                                    Category: { value: taskAttributes.Category.value.idref, act: 'set' } 
+                                }),
+                                
+                                // Handle ToDo with numeric validation
+                                ...(taskAttributes.ToDo?.value !== undefined && taskAttributes.ToDo?.value !== null && {
+                                    ToDo: { 
+                                        value: typeof taskAttributes.ToDo.value === 'number' ? 
+                                               taskAttributes.ToDo.value : 
+                                               parseFloat(taskAttributes.ToDo.value), 
+                                        act: 'set' 
+                                    }
+                                })
+                            }
+                        };
+                        
+                        // Add Owners with multi-value attribute handling (using "add" operation)
+                        if (taskAttributes.Owners?.value && 
+                            Array.isArray(taskAttributes.Owners.value) && 
+                            taskAttributes.Owners.value.length > 0) {
+                            
+                            const validOwners = taskAttributes.Owners.value
+                                .filter(o => o && o.idref && typeof o.idref === 'string')
+                                .map(o => o.idref);
+                            
+                            if (validOwners.length > 0) {
+                                newTaskPayload.Attributes.Owners = {
+                                    act: "add",
+                                    value: validOwners.length === 1 ? validOwners[0] : validOwners
+                                };
+                            }
                         }
-                    };
-                    
-                    const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
-                    if (!createTaskResponse) {
-                         console.warn(`Failed to copy task ${sourceTask.id} for new story ${newStoryId}`);
-                         // Decide if this constitutes a full story copy failure or just a partial one
+                        
+                        // Create the task
+                        const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
+                        if (createTaskResponse && createTaskResponse.id) {
+                            taskSuccessCount++;
+                        } else {
+                            console.error(`Failed to create task for story ${newStoryId}`);
+                            taskErrorCount++;
+                        }
+                    } catch (error) {
+                        console.error(`Error creating task for story ${newStoryId}:`, error);
+                        taskErrorCount++;
                     }
                 }
 
                 successCount++;
-                // Use storyOid for user-facing messages
-                showStatus(`Successfully copied story ${storyOid} and its tasks to ${newStoryId}.`);
+                
+                // Update status message with task copying results
+                if (originalTasks.length > 0) {
+                    if (taskErrorCount > 0) {
+                        showStatus(`Copied story ${storyOid} with ${taskSuccessCount}/${originalTasks.length} tasks (${taskErrorCount} tasks failed).`);
+                    } else {
+                        showStatus(`Successfully copied story ${storyOid} with all ${taskSuccessCount} tasks.`);
+                    }
+                } else {
+                    showStatus(`Successfully copied story ${storyOid} (no tasks found).`);
+                }
 
             } catch (error) {
                 console.error(`Error copying story ${storyOid}:`, error);
