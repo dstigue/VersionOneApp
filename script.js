@@ -21,8 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const basicAuthInputSection = document.getElementById('basic-auth-input-section');
     const v1UsernameInput = document.getElementById('v1-username');
     const v1PasswordInput = document.getElementById('v1-password');
-    // Story Team Filter element
-    const storyTeamFilterSelect = document.getElementById('story-team-filter');
+    // Story Owner Filter element (changed from Team)
+    const storyOwnerFilterSelect = document.getElementById('story-owner-filter');
 
     // Create filter elements
     const sourceOwnerFilterSelect = document.createElement('select');
@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Store all timeboxes for filtering
     let allTimeboxes = [];
-    // Store currently fetched stories for team filtering
+    // Store currently fetched stories for owner filtering
     let currentStories = [];
 
     let settings = {
@@ -585,44 +585,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- New: Function to Populate Story Team Filter ---
-    function populateStoryTeamFilter(stories) {
-        const teams = new Set();
+    // --- Changed: Function to Populate Story Owner Filter ---
+    function populateStoryOwnerFilter(stories) {
+        const owners = new Set();
         if (stories && stories.length > 0) {
             stories.forEach(story => {
-                const teamName = story.Attributes['Team.Name']?.value;
-                if (teamName) {
-                    teams.add(teamName);
+                const storyOwners = story.Attributes['Owners.Name']?.value;
+                if (storyOwners) {
+                    // Owners.Name can be a single string or an array of strings
+                    if (Array.isArray(storyOwners)) {
+                        storyOwners.forEach(owner => { if (owner) owners.add(owner); });
+                    } else { // Single owner string
+                        owners.add(storyOwners);
+                    }
                 }
             });
         }
         
         // Clear previous options except the default
-        storyTeamFilterSelect.innerHTML = '<option value="">All Teams</option>'; 
+        storyOwnerFilterSelect.innerHTML = '<option value="">All Owners</option>'; 
         
-        Array.from(teams).sort().forEach(team => {
+        Array.from(owners).sort().forEach(owner => {
             const option = document.createElement('option');
-            option.value = team;
-            option.textContent = team;
-            storyTeamFilterSelect.appendChild(option);
+            option.value = owner;
+            option.textContent = owner;
+            storyOwnerFilterSelect.appendChild(option);
         });
         
-        // Disable filter if no teams found
-        storyTeamFilterSelect.disabled = teams.size === 0;
+        // Disable filter if no owners found
+        storyOwnerFilterSelect.disabled = owners.size === 0;
     }
-    // --- End New Function ---
+    // --- End Changed Function ---
 
-    // --- New: Function to Display Stories (Handles Team Filtering) ---
-    function displayStories(stories, teamFilter) {
+    // --- Changed: Function to Display Stories (Handles Owner Filtering) ---
+    function displayStories(stories, ownerFilter) {
         storiesListDiv.innerHTML = ''; // Clear previous list
         const ul = document.createElement('ul');
         let displayedCount = 0;
 
         stories.forEach(story => {
-            const storyTeamName = story.Attributes['Team.Name']?.value || '';
-            // Apply team filter
-            if (teamFilter && storyTeamName !== teamFilter) {
-                return; // Skip story if it doesn't match the selected team filter
+            const storyOwnersValue = story.Attributes['Owners.Name']?.value;
+            let storyOwnersArray = [];
+            if (storyOwnersValue) {
+                 storyOwnersArray = Array.isArray(storyOwnersValue) ? storyOwnersValue : [storyOwnersValue];
+            }
+            
+            // Apply owner filter - check if the selected owner is in the story's owner list
+            if (ownerFilter && !storyOwnersArray.includes(ownerFilter)) {
+                return; // Skip story if it doesn't match the selected owner filter
             }
 
             displayedCount++;
@@ -644,8 +654,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyName = story.Attributes?.Name?.value || 'Unnamed Story';
             const storyNumber = story.Attributes?.Number?.value || '';
             label.htmlFor = checkbox.id;
-            // Include team name in the display
-            label.textContent = `${storyNumber} - ${storyName} (${storyTeamName || 'No Team'})`; 
+            // Display owners (or 'No Owner')
+            const ownersText = storyOwnersArray.length > 0 ? storyOwnersArray.join(', ') : 'No Owner';
+            label.textContent = `${storyNumber} - ${storyName} (Owner: ${ownersText})`; 
 
             li.appendChild(checkbox);
             li.appendChild(label);
@@ -675,8 +686,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ul.hasChildNodes()) {
             storiesListDiv.appendChild(ul);
             showStatus(`${displayedCount} stories loaded/filtered. Select stories to copy.`);
-        } else if (teamFilter) {
-             storiesListDiv.innerHTML = '<p>No stories match the selected team filter.</p>';
+        } else if (ownerFilter) {
+             storiesListDiv.innerHTML = '<p>No stories match the selected owner filter.</p>';
              showStatus('No stories match filter.');
         } else {
             // This case shouldn't be reached if the initial check passed, but good fallback
@@ -685,24 +696,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         checkCopyButtonState(); // Update button state
     }
-    // --- End New Function ---
+    // --- End Changed Function ---
 
     async function fetchStoriesAndTasks(timeboxId) {
         if (!timeboxId) {
             storiesListDiv.innerHTML = '<p>Please select a source timebox first.</p>';
             copyButton.disabled = true;
             currentStories = []; // Clear stored stories
-            populateStoryTeamFilter(currentStories); // Clear team filter
+            populateStoryOwnerFilter(currentStories); // Clear owner filter
             return;
         }
         showStatus(`Fetching stories...`);
         storiesListDiv.innerHTML = ''; // Clear previous list
         copyButton.disabled = true;
         currentStories = []; // Clear stored stories before fetch
-        populateStoryTeamFilter(currentStories); // Clear team filter
+        populateStoryOwnerFilter(currentStories); // Clear owner filter
 
-        // Construct the query - Added Team.Name
-        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Description,Team.Name&where=Timebox.ID='${timeboxId}'`;
+        // Construct the query - Changed Team.Name to Owners.Name
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Description,Owners.Name&where=Timebox.ID='${timeboxId}'`;
         const storyResponse = await v1ApiCall(storyQuery);
         if (!storyResponse || !storyResponse.Assets) {
             showStatus('No stories found or error fetching stories.', true);
@@ -712,8 +723,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (storyResponse.Assets.length > 0) {
             currentStories = storyResponse.Assets; // Store fetched stories
-            populateStoryTeamFilter(currentStories); // Populate the team filter dropdown
-            displayStories(currentStories, storyTeamFilterSelect.value); // Initial display using current filter value
+            populateStoryOwnerFilter(currentStories); // Populate the owner filter dropdown
+            displayStories(currentStories, storyOwnerFilterSelect.value); // Initial display using current filter value
         } else { 
             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
             showStatus('No active stories found.');
@@ -780,8 +791,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyNumericId = storyInfo.numericId;
             try {
                 showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
-                 // 1. Fetch details including AssetState
-                const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number,AssetState'; // Added AssetState
+                 // 1. Fetch details including AssetState, Custom_AcceptanceCriteria, TaggedWith
+                const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number,AssetState,Custom_AcceptanceCriteria,TaggedWith'; // Added fields
                 const originalStory = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${storySel}`);
 
                 // Adjust check for single Asset response structure
@@ -859,6 +870,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
                         ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
                         
+                        // --- Added Acceptance Criteria & Tags --- 
+                        ...(sourceAttributes.Custom_AcceptanceCriteria && sourceAttributes.Custom_AcceptanceCriteria.value !== null && { Custom_AcceptanceCriteria: { value: sourceAttributes.Custom_AcceptanceCriteria.value, act: 'set' } }),
+                        ...(sourceAttributes.TaggedWith && sourceAttributes.TaggedWith.value && sourceAttributes.TaggedWith.value.length > 0 && { TaggedWith: { value: sourceAttributes.TaggedWith.value, act: 'set' } }), // Tags are usually simple strings
+                        // --- End Added Fields ---
+                        
                         // Add back multi-value relations with strict checks
                         ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
                             AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
@@ -890,9 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newStoryId = createStoryResponse.id;
                 showStatus(`Created new story ${newStoryId}. Fetching original tasks...`);
 
-                // 4. Fetch original tasks separately, including Status.ID and ToDo
+                // 4. Fetch original tasks separately, including Status.ID, ToDo, TaggedWith
                 let originalTasks = [];
-                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID'; // Added Status.ID
+                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID,TaggedWith'; // Added TaggedWith
                 
                 try {
                     const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
@@ -943,7 +959,16 @@ document.addEventListener('DOMContentLoaded', () => {
                                                parseFloat(taskAttributes.ToDo.value), 
                                         act: 'set' 
                                     }
+                                }),
+
+                                // --- Add Task Tags (Corrected) --- 
+                                ...(taskAttributes.TaggedWith?.value && taskAttributes.TaggedWith.value.length > 0 && {
+                                    TaggedWith: {
+                                        act: "set", // Use set for tags
+                                        value: taskAttributes.TaggedWith.value 
+                                    }
                                 })
+                                // --- End Add Task Tags ---
                             }
                         };
                         
@@ -1093,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; // Clear stories when source changes
         copyButton.disabled = true; // Disable copy button
         currentStories = []; // Clear stories
-        populateStoryTeamFilter(currentStories); // Clear team filter
+        populateStoryOwnerFilter(currentStories); // Clear owner filter
     });
     targetTimeboxSelect.addEventListener('change', checkCopyButtonState);
     targetParentSelect.addEventListener('change', checkCopyButtonState);
@@ -1131,11 +1156,11 @@ document.addEventListener('DOMContentLoaded', () => {
         checkCopyButtonState();
     });
 
-    // --- New: Event Listener for Story Team Filter ---
-    storyTeamFilterSelect.addEventListener('change', () => {
-        displayStories(currentStories, storyTeamFilterSelect.value);
+    // --- Changed: Event Listener for Story Owner Filter ---
+    storyOwnerFilterSelect.addEventListener('change', () => {
+        displayStories(currentStories, storyOwnerFilterSelect.value);
     });
-    // --- End New Event Listener ---
+    // --- End Changed Event Listener ---
 
     // Add this new function to handle parallel loading with timeout
     async function loadInitialData() {
