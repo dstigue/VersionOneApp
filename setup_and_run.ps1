@@ -1,62 +1,112 @@
 # PowerShell Script to Setup and Run the VersionOne Story Copier Server
-Write-Host "Script execution started."
 
 param(
-    # Internal flag to indicate the script was relaunched for elevation
-    [switch]$Relaunched
+    # Internal flag to indicate the script was relaunched for elevation (used by install step)
+    [switch]$RelaunchedForInstall
 )
 
-# --- Elevation Check ---
-$IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
+Write-Host "Script execution started."
 
-if (-NOT $IsElevated) {
-    # Check if the -Relaunched switch was explicitly passed
-    if ($PSBoundParameters.ContainsKey('Relaunched')) {
-        # If we were relaunched but are still not elevated, elevation failed.
-        Write-Error "Failed to elevate privileges after relaunch. Please run the script manually using 'Run as administrator'."
-        Exit 1
+# --- Check for Node.js First ---
+Write-Host "Checking for Node.js installation..." -ForegroundColor Cyan
+$nodeExists = $false
+try {
+    # Try executing node -v. Redirect output to null, check exit code.
+    node --version *> $null 
+    if ($LASTEXITCODE -eq 0) {
+        $nodeExists = $true
+        Write-Host "Node.js found." -ForegroundColor Green
     } else {
-        # Not elevated and not relaunched yet, attempt to relaunch.
-        Write-Warning "This script requires elevated privileges. Attempting to relaunch with elevation..."
-        try {
-            # Relaunch PowerShell as admin, passing the current script file path and the -Relaunched switch
-            $scriptPath = $MyInvocation.MyCommand.Path
-            $arguments = "-NoProfile -ExecutionPolicy Bypass -File ""$scriptPath"" -Relaunched"
-            Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments
-            Write-Host "Exiting original non-elevated process."
-            Exit # Exit the current non-elevated instance
-        } catch {
-            Write-Error "Failed to start relaunch process with elevated privileges. Please run the script manually using 'Run as administrator'. Error: $($_.Exception.Message)"
+        Write-Host "Node.js not found in PATH." -ForegroundColor Yellow
+    }
+} catch {
+    # Node.js not installed or not in PATH
+    Write-Host "Node.js not found (command failed)." -ForegroundColor Yellow
+}
+
+# --- Install Node.js via winget if needed --- 
+if (-not $nodeExists) {
+    Write-Host "Attempting Node.js installation via winget..." -ForegroundColor Yellow
+    
+    # --- Elevation Check (Moved Here - Only needed for install) ---
+    $IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
+
+    if (-NOT $IsElevated) {
+        # Check if the -RelaunchedForInstall switch was explicitly passed
+        if ($PSBoundParameters.ContainsKey('RelaunchedForInstall')) {
+            # If we were relaunched but are still not elevated, elevation failed.
+            Write-Error "Failed to elevate privileges for installation after relaunch. Please run the script manually using 'Run as administrator'."
+            Exit 1
+        } else {
+            # Not elevated and not relaunched yet, attempt to relaunch for install.
+            Write-Warning "Winget installation requires elevated privileges. Attempting to relaunch with elevation..."
+            try {
+                # Relaunch PowerShell as admin, passing the current script file path and the -RelaunchedForInstall switch
+                $scriptPath = $MyInvocation.MyCommand.Path
+                $arguments = "-NoProfile -ExecutionPolicy Bypass -File ""$scriptPath"" -RelaunchedForInstall"
+                Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments
+                Write-Host "Exiting original non-elevated process to allow elevated instance to run."
+                Exit # Exit the current non-elevated instance
+            } catch {
+                Write-Error "Failed to start relaunch process with elevated privileges for installation. Please run the script manually using 'Run as administrator'. Error: $($_.Exception.Message)"
+                Exit 1
+            }
+        }
+    }
+    # If we get here, we are either already elevated or successfully relaunched with elevation.
+    Write-Host "Running with elevated privileges for installation." -ForegroundColor Green
+
+    # --- Proceed with Winget Install --- 
+    try {
+        winget --version *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Winget command not found. Please install Node.js manually from https://nodejs.org/ or ensure Winget is installed and in PATH."
             Exit 1
         }
+
+        Write-Host "Running: winget install OpenJS.NodeJS --accept-package-agreements --accept-source-agreements" -ForegroundColor Gray
+        # Attempt to install Node.js silently
+        winget install OpenJS.NodeJS --accept-package-agreements --accept-source-agreements
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Winget failed to install Node.js. Please try installing Node.js manually from https://nodejs.org/"
+            Exit 1
+        }
+
+        Write-Host "Node.js installation completed via Winget. Please CLOSE this terminal and RE-RUN the script in a NEW terminal window for the changes to take effect." -ForegroundColor Yellow
+        Exit 0 # Exit cleanly, requiring user to restart script in new terminal
+
+    } catch {
+        Write-Error "Error during Node.js installation attempt via Winget. Please install manually from https://nodejs.org/. Error: $($_.Exception.Message)"
+        Exit 1
     }
 }
 
-# Script continues here if running with elevated privileges
-Write-Host "Running with elevated privileges." -ForegroundColor Green
+# --- Script continues only if Node.js was found or install wasn't needed --- 
 
-# Exit script immediately if any command fails
-# $ErrorActionPreference = 'Stop' # Uncomment this for stricter error handling if desired
+# Exit script immediately if any command fails (Optional - uncomment if desired)
+# $ErrorActionPreference = 'Stop' 
 
-Write-Host "Starting setup..." -ForegroundColor Cyan
+Write-Host "Proceeding with server setup..." -ForegroundColor Cyan
 
-# --- Check for HTTPS_PROXY Environment Variable ---
+# --- Check for HTTPS_PROXY Environment Variable --- 
+# (Proxy check remains here as it might be needed for npm install/start)
 $httpsProxy = [System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "Process")
 
 if (-not $httpsProxy) {
-    $setupProxy = Read-Host "Do you want to set up HTTPS_PROXY for NTLM authentication? (y/n)"
+    $setupProxy = Read-Host "NTLM Proxy: HTTPS_PROXY variable not set. Do you want to set it up now? (y/n)"
     
     if ($setupProxy -eq 'y' -or $setupProxy -eq 'Y') {
         # Get proxy server details
         $proxyServer = Read-Host "Enter proxy server address (e.g., proxy.example.com:8080)"
         
         # Get credentials
-        $username = Read-Host "Enter your username"
+        $username = Read-Host "Enter your NTLM username"
         
         # Get password with confirmation
         $passwordsMatch = $false
         while (-not $passwordsMatch) {
-            $securePassword = Read-Host "Enter your password" -AsSecureString
+            $securePassword = Read-Host "Enter your NTLM password" -AsSecureString
             $securePasswordConfirm = Read-Host "Confirm your password" -AsSecureString
             
             # Convert secure strings for comparison
@@ -80,105 +130,74 @@ if (-not $httpsProxy) {
         # Clear main password from memory after we're done with both
         [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr1)
         
-        # Use fixed domain "USA"
-        $domain = "USA"
+        # Assuming domain might be needed for NTLM proxy format
+        $domain = Read-Host "Enter your NTLM domain (e.g., MYDOMAIN)"
         
-        # Format the HTTPS_PROXY value
-        $proxyValue = "http://${domain}%5C${username}:${password}@${proxyServer}"
+        # Format the HTTPS_PROXY value (URL encode domain\username)
+        $encodedUser = [uri]::EscapeDataString("${domain}\${username}")
+        $encodedPassword = [uri]::EscapeDataString($password)
+        $proxyValue = "http://${encodedUser}:${encodedPassword}@${proxyServer}"
         
         # Set the environment variable for the current process
         [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyValue, "Process")
+        Write-Host "HTTPS_PROXY set for this session." -ForegroundColor Green
         
         # Optionally, ask if they want to set it permanently
-        $setPermanent = Read-Host "Do you want to set this permanently for your user account? (y/n)"
+        $setPermanent = Read-Host "Do you want to try setting this permanently for your user account? (Requires registry modification) (y/n)"
         if ($setPermanent -eq 'y' -or $setPermanent -eq 'Y') {
             try {
-                [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyValue, "User")
+                # Requires elevated privileges which we should have if we installed Node, but check anyway for edge cases
+                if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")){
+                    [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyValue, "User")
+                    Write-Host "HTTPS_PROXY set permanently for user." -ForegroundColor Green
+                 } else {
+                     Write-Warning "Setting permanent environment variable requires elevated privileges. Skipping."
+                 }
             } catch {
-                Write-Host "Failed to set permanent environment variable: $_" -ForegroundColor Red
+                Write-Error "Failed to set permanent environment variable: $($_.Exception.Message)"
             }
         }
-    }
-}
-
-# --- Check for Node.js --- 
-$nodeExists = $false
-try {
-    # Try executing node -v. Redirect output to null, check exit code.
-    node --version *> $null 
-    if ($LASTEXITCODE -eq 0) {
-        $nodeExists = $true
-    }
-} catch {
-    # Node.js not installed or not in PATH
-}
-
-# --- Install Node.js via winget if needed --- 
-if (-not $nodeExists) {
-    Write-Host "Node.js not found. Attempting installation via winget..." -ForegroundColor Yellow
-    try {
-        winget --version *> $null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Winget command not found. Please install Node.js manually from https://nodejs.org/"
-            Exit 1
-        }
-
-        # Attempt to install Node.js silently
-        winget install OpenJS.NodeJS --accept-package-agreements --accept-source-agreements
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Winget failed to install Node.js. Please install Node.js manually from https://nodejs.org/"
-            Exit 1
-        }
-
-        Write-Host "Node.js installation completed. Please CLOSE this terminal and RE-RUN the script in a NEW terminal window." -ForegroundColor Yellow
-        Exit 0 # Exit cleanly, requiring user to restart script in new terminal
-
-    } catch {
-        Write-Error "Error installing Node.js. Please install manually from https://nodejs.org/"
-        Exit 1
+        # Clear sensitive variables from memory
+        Remove-Variable password, passwordConfirm, securePassword, securePasswordConfirm, bstr1, bstr2, encodedPassword -ErrorAction SilentlyContinue
     }
 }
 
 # --- Navigate to Script Directory --- 
 if ($PSScriptRoot) {
+    Write-Host "Navigating to script directory: $PSScriptRoot" -ForegroundColor Cyan
     Set-Location $PSScriptRoot
+} else {
+    Write-Warning "Could not determine script directory. Assuming current directory: $PWD"
 }
 
 # --- Check for package.json --- 
+Write-Host "Checking for package.json..." -ForegroundColor Cyan
 if (-not (Test-Path -Path .\package.json -PathType Leaf)) {
-    Write-Error "package.json not found in the current directory. Cannot proceed."
+    Write-Error "package.json not found in the current directory ($PWD). Cannot proceed."
     Exit 1
 }
+Write-Host "package.json found." -ForegroundColor Green
 
-# --- Run npm start --- 
-Write-Host "Starting the server..." -ForegroundColor Cyan
-Write-Host "The application will be available at http://localhost:3000" -ForegroundColor Cyan
+# --- Run npm start directly --- 
+Write-Host "Starting the Node.js server (npm start)..." -ForegroundColor Cyan
+Write-Host "The application should become available at http://localhost:3000" -ForegroundColor Cyan
+Write-Host "Press CTRL+C here to stop the server when you are finished." -ForegroundColor Yellow
 
-# Start the server in a job so we can open the browser
-$serverJob = Start-Job -ScriptBlock { 
-    param($workingDir)
-    Set-Location $workingDir
-    npm start 
-} -ArgumentList $PWD
-
-# Wait a moment for the server to initialize
-Start-Sleep -Seconds 3
-
-# Open the browser
-Start-Process "http://localhost:3000"
-
-# Display message about how to exit
-Write-Host "Server is running. Press Ctrl+C to stop the server when finished." -ForegroundColor Cyan
-
-# Wait for the job to complete (when user presses Ctrl+C)
+# Attempt to open the browser slightly before starting the server (it might 404 initially)
 try {
-    Receive-Job -Job $serverJob -Wait
-    Stop-Job -Job $serverJob
-    Remove-Job -Job $serverJob
+    Write-Host "Attempting to open application in default browser..." -ForegroundColor Gray
+    Start-Process "http://localhost:3000"
+    Start-Sleep -Seconds 2 # Give browser a moment before server potentially blocks console
 } catch {
-    Write-Host "Server stopped." -ForegroundColor Yellow
+    Write-Warning "Could not automatically open browser. Please navigate to http://localhost:3000 manually once the server starts. Error: $($_.Exception.Message)"
 }
 
-# Execution will continue here when server is stopped.
-Write-Host "Script finished."
+# Execute npm start in the foreground. The script will wait here until CTRL+C is pressed.
+# Ensure HTTPS_PROXY is available if set earlier and needed by npm
+if ($httpsProxy) {
+    $env:HTTPS_PROXY = $httpsProxy
+}
+npm start
+
+# Execution will only reach here after npm start is terminated (e.g., by CTRL+C)
+Write-Host "Server process terminated." -ForegroundColor Yellow

@@ -1023,14 +1023,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const result = await v1ApiCall(testEndpoint, 'GET', null, true);
         showLoading(false);
 
-        if (result) { // Simplified check - rely on API call failure for bad connection
-            const username = result.Attributes?.Username?.value || 'unknown user'; // Safer access
+        if (result && result.Assets && result.Assets.length > 0) { // Check if result and Assets array exist
+            // Access the username from the first asset in the array
+            const username = result.Assets[0].Attributes?.Username?.value || 'unknown user'; 
             settingsStatus.textContent = `Connection successful! Authenticated as ${username}.`;
             settingsStatus.className = 'success';
             // Load both in parallel with timeout
             loadInitialData();
         } else {
-            // Error message handled by v1ApiCall
+            // Error message handled by v1ApiCall or result structure is unexpected
+            // Ensure settingsStatus reflects the failure if v1ApiCall didn't already set it
+            if (!settingsStatus.textContent.includes('failed') && !settingsStatus.textContent.includes('Error')) {
+                 settingsStatus.textContent = 'Connection test failed: Could not retrieve user information.';
+                 settingsStatus.className = 'error';
+            }
             // Clear dropdowns if connection fails
             populateTimeboxSelect(sourceTimeboxSelect, null);
             populateTimeboxSelect(targetTimeboxSelect, null);
