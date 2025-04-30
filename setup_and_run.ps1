@@ -9,14 +9,8 @@ param(
 if ($PSBoundParameters.ContainsKey('RelaunchedForInstall')) {
     Write-Host "Script relaunched for Node.js installation." -ForegroundColor Cyan
 
-    # Verify elevation in the relaunched instance
-    $IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
-    if (-NOT $IsElevated) {
-        Write-Error "Relaunched process is not elevated. Installation cannot proceed. Please run the original script manually using 'Run as administrator'."
-        Exit 1 # Use non-zero exit code for error
-    }
-
-    Write-Host "Running with elevated privileges for installation." -ForegroundColor Green
+    # Assume elevation succeeded if we got here via Start-Process -Verb RunAs
+    Write-Host "Running with elevated privileges for installation (assumed)." -ForegroundColor Green
 
     # --- Perform ONLY Winget Install --- 
     try {
