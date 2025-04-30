@@ -670,8 +670,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Set choices using the Choices.js API
         if (storyOwnerChoices) {
-            console.log("storyOwnerChoices instance found. Updating choices."); // Log 5
-            storyOwnerChoices.clearChoices();
+            console.log("storyOwnerChoices instance found. Clearing store and updating choices."); // Log 5
+            storyOwnerChoices.clearStore(); // Use clearStore for a more thorough reset
             storyOwnerChoices.setChoices(ownerChoices, 'value', 'label', true); // Pass 'value', 'label', and true (replace choices)
         } else {
             console.error("populateStoryOwnerFilter: storyOwnerChoices instance is null!"); // Log 5 (error case)
@@ -680,6 +680,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Changed: Function to Display Stories (Handles Multi-Owner Filtering) ---
     function displayStories(stories) {
+        // console.log('[displayStories] Function called.');
+        // Log the currently selected owners according to Choices.js at the start of the function
+        /*
+        if (storyOwnerChoices) {
+            console.log('[displayStories] Selected owners at start:', storyOwnerChoices.getValue(true));
+        } else {
+            console.log('[displayStories] storyOwnerChoices not initialized at start.');
+        }
+        */
+
         storiesListDiv.innerHTML = ''; // Clear previous list
         selectAllCheckbox.checked = false; // Reset select all checkbox
         selectAllCheckbox.indeterminate = false;
@@ -1313,37 +1323,40 @@ document.addEventListener('DOMContentLoaded', () => {
     targetParentSelect.addEventListener('change', checkCopyButtonState);
 
     // Add filter event listeners
-    sourceOwnerFilterSelect.addEventListener('choice', () => {
-        sourceOwnerFilterSelect.dataset.lastChanged = 'true';
-        populateFilterDropdowns(allTimeboxes, false);
+    sourceOwnerFilterSelect.addEventListener('change', () => {
+        // console.log('[change] Event Fired on sourceOwnerFilterSelect.');
         populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
         storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
         copyButton.disabled = true;
         updateSelectedCount();
-        updateSelectAllCheckboxState(); // Added
+        updateSelectAllCheckboxState();
     });
     
-    targetOwnerFilterSelect.addEventListener('choice', () => {
-        targetOwnerFilterSelect.dataset.lastChanged = 'true';
-        populateFilterDropdowns(allTimeboxes, false);
+    targetOwnerFilterSelect.addEventListener('change', () => {
+        // console.log('[change] Event Fired on targetOwnerFilterSelect.');
         populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
         checkCopyButtonState();
     });
 
-    // --- Changed: Event Listener for Story Owner Filter ---
-    storyOwnerFilterSelect.addEventListener('change', () => {
-        console.log('Story Owner Filter changed!');
+    // Story owner filter event - Using standard 'change' listener with stopPropagation
+    storyOwnerFilterSelect.addEventListener('change', (event) => {
+        // console.log('[change] Event Fired on storyOwnerFilterSelect.');
+        event.stopPropagation(); // Prevent event from bubbling up
+        // console.log('[change] Event propagation stopped.');
+
         if (!storyOwnerChoices) {
-            console.error('storyOwnerChoices instance is null in event listener');
+            // console.error('[change] storyOwnerChoices instance is null!');
             return;
         }
-        const selectedItems = storyOwnerChoices.getValue();
-        console.log('Selected Owner Items:', selectedItems);
-        const selectedValues = storyOwnerChoices.getValue(true);
-        console.log('Selected Owner Values:', selectedValues);
-        console.log('Current stories available for filtering:', currentStories?.length);
+        // console.log('[change] Selected owners BEFORE displayStories:', storyOwnerChoices.getValue(true));
+        // console.log('[change] Calling displayStories...');
         displayStories(currentStories);
-        updateSelectAllCheckboxState(); // Update after stories are re-displayed
+        // console.log('[change] Returned from displayStories.');
+        // console.log('[change] Selected owners AFTER displayStories:', storyOwnerChoices.getValue(true));
+        // console.log('[change] Calling updateSelectAllCheckboxState...');
+        updateSelectAllCheckboxState();
+        // console.log('[change] Returned from updateSelectAllCheckboxState.');
+        // console.log('[change] Selected owners AFTER updateSelectAll:', storyOwnerChoices.getValue(true));
     });
 
     // Add this new function to handle parallel loading with timeout
@@ -1389,8 +1402,9 @@ document.addEventListener('DOMContentLoaded', () => {
         loadSettings();
         
         // --- Restore essential event listeners here ---
-        // Source filter events (Owner)
-        sourceOwnerFilterSelect.addEventListener('choice', () => {
+        // Source filter events (Owner) - Using 'change' instead of 'choice'
+        sourceOwnerFilterSelect.addEventListener('change', () => {
+            // console.log('[change] Event Fired on sourceOwnerFilterSelect.');
             populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
             storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
             copyButton.disabled = true;
@@ -1398,8 +1412,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSelectAllCheckboxState();
         });
 
-        // Target filter events (Owner)
-        targetOwnerFilterSelect.addEventListener('choice', () => {
+        // Target filter events (Owner) - Using 'change' instead of 'choice'
+        targetOwnerFilterSelect.addEventListener('change', () => {
+            // console.log('[change] Event Fired on targetOwnerFilterSelect.');
             populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
             checkCopyButtonState();
         });
@@ -1417,11 +1432,27 @@ document.addEventListener('DOMContentLoaded', () => {
         targetTimeboxSelect.addEventListener('change', checkCopyButtonState); // Use 'change'
         targetParentSelect.addEventListener('change', checkCopyButtonState); // Use 'change'
         
-        // Story owner filter event
-        storyOwnerFilterSelect.addEventListener('change', () => {
+        // Story owner filter event - Using standard 'change' listener with stopPropagation
+        storyOwnerFilterSelect.addEventListener('change', (event) => {
+            // console.log('[change] Event Fired on storyOwnerFilterSelect.');
+            event.stopPropagation(); // Prevent event from bubbling up
+            // console.log('[change] Event propagation stopped.');
+
+            if (!storyOwnerChoices) {
+                // console.error('[change] storyOwnerChoices instance is null!');
+                return;
+            }
+            // console.log('[change] Selected owners BEFORE displayStories:', storyOwnerChoices.getValue(true));
+            // console.log('[change] Calling displayStories...');
             displayStories(currentStories);
-            updateSelectAllCheckboxState(); // Update select all based on filtered stories
+            // console.log('[change] Returned from displayStories.');
+            // console.log('[change] Selected owners AFTER displayStories:', storyOwnerChoices.getValue(true));
+            // console.log('[change] Calling updateSelectAllCheckboxState...');
+            updateSelectAllCheckboxState();
+            // console.log('[change] Returned from updateSelectAllCheckboxState.');
+            // console.log('[change] Selected owners AFTER updateSelectAll:', storyOwnerChoices.getValue(true));
         });
+
         // --- End restored listeners ---
 
         // Setup main button event listeners
