@@ -17,5 +17,8 @@
     "node-fetch": "^2.6.1",
     "node-http-ntlm": "^1.7.5",
     "proxy-agent": "^6.5.0"
+  },
+  "overrides": {
+    "underscore": "^1.13.6"
   }
 }
