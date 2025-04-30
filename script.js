@@ -981,16 +981,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const optionalField = 'Custom_AcceptanceCriteria';
                 const fullSel = `${baseSel},${optionalField}`; // Try with optional field first
                 let fetchErrorOccurred = false;
+                let storyResponse = null; // Initialize storyResponse
 
                 console.log(`Attempting to fetch story ${storyNumericId} with sel: ${fullSel}`);
-                let storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${fullSel}`);
+                storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${fullSel}`);
                 
-                // Check if the first attempt failed specifically due to the optional field
-                if (storyResponse?.error && storyResponse.message?.includes(optionalField)) {
-                    console.warn(`Fetching story ${storyNumericId} failed due to ${optionalField}. Retrying without it.`);
+                // --- MODIFIED FALLBACK LOGIC --- 
+                // If the first attempt returned ANY error, retry without the optional field
+                if (storyResponse?.error) { 
+                    console.warn(`Fetching story ${storyNumericId} with full selection failed (Error: ${storyResponse.message || 'Unknown'}). Retrying without optional field '${optionalField}'.`);
                     showStatus(`Retrying fetch for story ${storyOid} without optional field...`);
                     storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${baseSel}`);
                 }
+                // --- END MODIFIED FALLBACK LOGIC ---
                 
                 // Check the final response (either from first or second attempt)
                 if (!storyResponse || storyResponse.error) {
