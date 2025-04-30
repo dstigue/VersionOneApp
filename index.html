@@ -407,7 +407,15 @@
             
             <!-- Stories and tasks section -->
             <div id="stories-tasks-section" class="mb-4">
-                <h5 class="subsection-title"><i class="bi bi-list-check me-2"></i>Stories & Tasks in Source Timebox</h5>
+                <div class="mb-2">
+                    <h5 class="subsection-title mb-2"><i class="bi bi-list-check me-2"></i>Stories & Tasks in Source Timebox</h5>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" value="" id="select-all-stories">
+                        <label class="form-check-label" for="select-all-stories">
+                            <strong>Select All</strong>
+                        </label>
+                    </div>
+                </div>
                 <div id="stories-list" class="border rounded">
                     <!-- Stories and tasks will be displayed here -->
                     <p class="m-3">Select a source timebox and click "Load Stories".</p>

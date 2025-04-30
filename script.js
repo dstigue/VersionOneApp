@@ -12,7 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyButton = document.getElementById('copy-button');
     const statusMessage = document.getElementById('status-message');
     const loadingIndicator = document.getElementById('loading-indicator');
-    const selectedCountBadge = document.getElementById('selected-count'); // New element for displaying count
+    const selectedCountBadge = document.getElementById('selected-count');
+    const selectAllCheckbox = document.getElementById('select-all-stories');
     // Auth method selection elements
     const authNtlmRadio = document.getElementById('auth-ntlm'); 
     const authTokenRadio = document.getElementById('auth-token');
@@ -34,26 +35,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let targetTimeboxChoices = null;
     let targetParentChoices = null;
     let sourceOwnerFilterChoices = null;
-    let sourceScheduleFilterChoices = null;
     let targetOwnerFilterChoices = null;
-    let targetScheduleFilterChoices = null;
 
     // Create filter elements
     const sourceOwnerFilterSelect = document.createElement('select');
     sourceOwnerFilterSelect.id = 'source-owner-filter';
     sourceOwnerFilterSelect.className = 'filter-select';
     
-    const sourceScheduleFilterSelect = document.createElement('select');
-    sourceScheduleFilterSelect.id = 'source-schedule-filter';
-    sourceScheduleFilterSelect.className = 'filter-select';
-    
     const targetOwnerFilterSelect = document.createElement('select');
     targetOwnerFilterSelect.id = 'target-owner-filter';
     targetOwnerFilterSelect.className = 'filter-select';
-    
-    const targetScheduleFilterSelect = document.createElement('select');
-    targetScheduleFilterSelect.id = 'target-schedule-filter';
-    targetScheduleFilterSelect.className = 'filter-select';
 
     // Add filter elements to the DOM
     const sourceFiltersDiv = document.createElement('div');
@@ -65,14 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
     sourceOwnerGroup.innerHTML = '<label for="source-owner-filter">Owner:</label>';
     sourceOwnerGroup.appendChild(sourceOwnerFilterSelect);
     
-    const sourceScheduleGroup = document.createElement('div');
-    sourceScheduleGroup.className = 'filter-group';
-    sourceScheduleGroup.innerHTML = '<label for="source-schedule-filter">Schedule:</label>';
-    sourceScheduleGroup.appendChild(sourceScheduleFilterSelect);
-    
     sourceFiltersDiv.appendChild(document.createElement('div')).innerHTML = '<div class="filter-label">Filter by:</div>';
     sourceFiltersDiv.appendChild(sourceOwnerGroup);
-    sourceFiltersDiv.appendChild(sourceScheduleGroup);
     // Insert into the new placeholder div
     const sourceFiltersContainer = document.getElementById('source-filters-container');
     sourceFiltersContainer.appendChild(sourceFiltersDiv);
@@ -86,14 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
     targetOwnerGroup.innerHTML = '<label for="target-owner-filter">Owner:</label>';
     targetOwnerGroup.appendChild(targetOwnerFilterSelect);
     
-    const targetScheduleGroup = document.createElement('div');
-    targetScheduleGroup.className = 'filter-group';
-    targetScheduleGroup.innerHTML = '<label for="target-schedule-filter">Schedule:</label>';
-    targetScheduleGroup.appendChild(targetScheduleFilterSelect);
-    
     targetFiltersDiv.appendChild(document.createElement('div')).innerHTML = '<div class="filter-label">Filter by:</div>';
     targetFiltersDiv.appendChild(targetOwnerGroup);
-    targetFiltersDiv.appendChild(targetScheduleGroup);
     // Insert into the new placeholder div
     const targetFiltersContainer = document.getElementById('target-filters-container');
     targetFiltersContainer.appendChild(targetFiltersDiv);
@@ -153,22 +132,10 @@ document.addEventListener('DOMContentLoaded', () => {
             placeholderValue: 'All Owners'
         });
 
-        sourceScheduleFilterChoices = new Choices(sourceScheduleFilterSelect, {
-            searchEnabled: true,
-            placeholder: true,
-            placeholderValue: 'All Schedules'
-        });
-
         targetOwnerFilterChoices = new Choices(targetOwnerFilterSelect, {
             searchEnabled: true,
             placeholder: true,
             placeholderValue: 'All Owners'
-        });
-
-        targetScheduleFilterChoices = new Choices(targetScheduleFilterSelect, {
-            searchEnabled: true,
-            placeholder: true,
-            placeholderValue: 'All Schedules'
         });
     }
 
@@ -477,7 +444,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateFilterOptions(
             timeboxes.Assets, 
             sourceOwnerFilterChoices, 
-            sourceScheduleFilterChoices, 
             isInitialLoad
         );
 
@@ -485,38 +451,27 @@ document.addEventListener('DOMContentLoaded', () => {
         updateFilterOptions(
             timeboxes.Assets, 
             targetOwnerFilterChoices, 
-            targetScheduleFilterChoices, 
             isInitialLoad
         );
     }
 
-    function updateFilterOptions(timeboxAssets, ownerChoices, scheduleChoices, isInitialLoad = false) {
+    function updateFilterOptions(timeboxAssets, ownerChoices, isInitialLoad = false) {
         // Defensive check
-        if (!ownerChoices || !scheduleChoices) {
-            console.error("Choices instance not initialized in updateFilterOptions", { ownerChoices, scheduleChoices });
+        if (!ownerChoices) {
+            console.error("Owner Choices instance not initialized in updateFilterOptions", { ownerChoices });
             return; 
         }
         // Get current selections
         const currentOwner = ownerChoices.getValue()?.value || ''; 
-        const currentSchedule = scheduleChoices.getValue()?.value || ''; 
 
         // Collect available options based on current filters
         const availableOwners = new Set();
-        const availableSchedules = new Set();
 
         timeboxAssets.forEach(tb => {
             const owner = tb.Attributes?.['Owner.Name']?.value || '';
-            const schedule = tb.Attributes?.['Schedule.Name']?.value || '';
             
-            // If no schedule filter or this timebox matches the schedule filter
-            if (!currentSchedule || schedule === currentSchedule) {
-                if (owner) availableOwners.add(owner);
-            }
-            
-            // If no owner filter or this timebox matches the owner filter
-            if (!currentOwner || owner === currentOwner) {
-                if (schedule) availableSchedules.add(schedule);
-            }
+            // Always add owner if present
+            if (owner) availableOwners.add(owner);
         });
 
         // Format for Choices.js
@@ -525,39 +480,17 @@ document.addEventListener('DOMContentLoaded', () => {
             label: owner
         }));
         
-        const scheduleChoicesOptions = Array.from(availableSchedules).sort().map(schedule => ({
-            value: schedule,
-            label: schedule
-        }));
-
-        // Only during initial load or when explicitly directed to update both dropdowns
-        if (isInitialLoad) {
-            ownerChoices.clearChoices();
-            ownerChoices.setChoices([{ value: '', label: 'All Owners', selected: !currentOwner }].concat(ownerChoicesOptions));
-            
-            scheduleChoices.clearChoices();
-            scheduleChoices.setChoices([{ value: '', label: 'All Schedules', selected: !currentSchedule }].concat(scheduleChoicesOptions));
-            return;
-        }
-
-        // When not initial load, we only update the "complementary" dropdown
-        if (ownerChoices.passedElement.element.dataset.lastChanged === 'true') {
-            scheduleChoices.clearChoices();
-            scheduleChoices.setChoices([{ value: '', label: 'All Schedules', selected: !currentSchedule }].concat(scheduleChoicesOptions));
-            ownerChoices.passedElement.element.dataset.lastChanged = 'false';
-        } else if (scheduleChoices.passedElement.element.dataset.lastChanged === 'true') {
-            ownerChoices.clearChoices();
-            ownerChoices.setChoices([{ value: '', label: 'All Owners', selected: !currentOwner }].concat(ownerChoicesOptions));
-            scheduleChoices.passedElement.element.dataset.lastChanged = 'false';
-        }
+        // Update owner dropdown
+        ownerChoices.clearChoices();
+        ownerChoices.setChoices([{ value: '', label: 'All Owners', selected: !currentOwner }].concat(ownerChoicesOptions));
     }
 
-    function filterTimeboxes(choicesInstance, ownerFilter, scheduleFilter) {
+    function filterTimeboxes(choicesInstance, ownerFilter) {
         // Clear current choices
         choicesInstance.clearStore();
         
         // --- Debug Log 1: Function entry and instance check ---
-        console.log('filterTimeboxes called for:', choicesInstance?.passedElement?.element?.id, 'with filters:', { ownerFilter, scheduleFilter });
+        console.log('filterTimeboxes called for:', choicesInstance?.passedElement?.element?.id, 'with filters:', { ownerFilter });
         if (!choicesInstance) {
             console.error('filterTimeboxes: choicesInstance is null!');
             return;
@@ -572,12 +505,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Apply filters
         const filteredTimeboxes = allTimeboxes.Assets.filter(tb => {
             const owner = tb.Attributes?.['Owner.Name']?.value || '';
-            const schedule = tb.Attributes?.['Schedule.Name']?.value || '';
             
             const ownerMatch = !ownerFilter || owner === ownerFilter;
-            const scheduleMatch = !scheduleFilter || schedule === scheduleFilter;
             
-            return ownerMatch && scheduleMatch;
+            return ownerMatch;
         });
 
         // --- Debug Log 2: Filtered results ---
@@ -608,11 +539,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const beginDate = formatDate(tb.Attributes?.BeginDate?.value);
                 const endDate = formatDate(tb.Attributes?.EndDate?.value);
                 const ownerName = tb.Attributes?.['Owner.Name']?.value || 'N/A';
-                const scheduleName = tb.Attributes?.['Schedule.Name']?.value || 'N/A';
                 
                 return {
                     value: id,
-                    label: `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}, Schedule: ${scheduleName}`
+                    label: `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}`
                 };
             });
 
@@ -647,34 +577,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function populateTimeboxSelect(choicesInstance, timeboxes) {
         // Store the timeboxes for filtering if this is the first load
-        if (timeboxes && timeboxes.Assets && (!allTimeboxes || !allTimeboxes.Assets)) {
+        if (timeboxes && timeboxes.Assets && (!allTimeboxes || !allTimeboxes.Assets || allTimeboxes.Assets.length === 0)) { // Ensure allTimeboxes is properly checked/set
             allTimeboxes = timeboxes;
-            populateFilterDropdowns(timeboxes);
+            populateFilterDropdowns(timeboxes, true); // Use true for initial load population
+        } else if (allTimeboxes?.Assets?.length > 0) {
+             // If timeboxes already exist, just repopulate filters (not initial load)
+            // This might be redundant if filters are updated elsewhere, consider if needed
+            // populateFilterDropdowns(allTimeboxes, false); 
         }
         
         // Get appropriate filter values based on which dropdown is being populated
         let ownerFilter = '';
-        let scheduleFilter = '';
         let ownerChoicesInstance = null;
-        let scheduleChoicesInstance = null;
 
         if (choicesInstance === sourceTimeboxChoices) {
             ownerChoicesInstance = sourceOwnerFilterChoices;
-            scheduleChoicesInstance = sourceScheduleFilterChoices;
         } else if (choicesInstance === targetTimeboxChoices) {
             ownerChoicesInstance = targetOwnerFilterChoices;
-            scheduleChoicesInstance = targetScheduleFilterChoices;
         }
 
         // Defensive check
-        if (ownerChoicesInstance && scheduleChoicesInstance) {
+        if (ownerChoicesInstance) {
             ownerFilter = ownerChoicesInstance.getValue()?.value || ''; 
-            scheduleFilter = scheduleChoicesInstance.getValue()?.value || '';
         } else {
-            console.error("Filter Choices instance not found in populateTimeboxSelect", { ownerChoicesInstance, scheduleChoicesInstance });
+            console.error("Owner Filter Choices instance not found in populateTimeboxSelect", { ownerChoicesInstance });
         }
         
-        filterTimeboxes(choicesInstance, ownerFilter, scheduleFilter);
+        filterTimeboxes(choicesInstance, ownerFilter);
     }
 
     // --- Core Logic Functions (Placeholders) ---
@@ -691,8 +620,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const day = String(sixMonthsAgo.getDate()).padStart(2, '0');
         const sixMonthsAgoDateString = `${year}-${month}-${day}`;
 
-        // Fetch only active timeboxes - ADDED BeginDate, EndDate, Owner.Name, Schedule.Name to sel
-        const timeboxSelectFields = 'Name,BeginDate,EndDate,Owner.Name,Schedule.Name';
+        // Fetch only active timeboxes - REMOVED Schedule.Name
+        const timeboxSelectFields = 'Name,BeginDate,EndDate,Owner.Name';
         // Add the where clause for the date filter
         const timeboxQuery = `rest-1.v1/Data/Timebox?sel=${timeboxSelectFields}&where=BeginDate>='${sixMonthsAgoDateString}'`;
 
@@ -752,14 +681,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Changed: Function to Display Stories (Handles Multi-Owner Filtering) ---
     function displayStories(stories) {
         storiesListDiv.innerHTML = ''; // Clear previous list
+        selectAllCheckbox.checked = false; // Reset select all checkbox
+        selectAllCheckbox.indeterminate = false;
+        
+        // Create a list container
         const ul = document.createElement('ul');
+        ul.className = 'list-unstyled';
+        
+        // Filter stories based on selected owners
+        const ownerFilter = storyOwnerChoices ? storyOwnerChoices.getValue().map(owner => owner.value) : [];
         let displayedCount = 0;
-
-        // Get selected owners from the multi-select filter
-        const selectedOwners = storyOwnerChoices ? 
-            storyOwnerChoices.getValue().map(item => item.value) : [];
-        const isFilterActive = selectedOwners.length > 0;
-
+        let filterStatus = "";
+        
+        // Loop through each story and create list items
         stories.forEach(story => {
             const storyOwnersValue = story.Attributes['Owners.Name']?.value;
             let storyOwnersArray = [];
@@ -769,10 +703,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Apply owner filter - check if any of the story's owners are in the selected list
             let ownerMatch = false;
-            if (!isFilterActive) {
+            if (!ownerFilter.length) {
                 ownerMatch = true; // Show all if filter is not active
             } else {
-                ownerMatch = storyOwnersArray.some(storyOwner => selectedOwners.includes(storyOwner));
+                ownerMatch = storyOwnersArray.some(storyOwner => ownerFilter.includes(storyOwner));
             }
 
             if (!ownerMatch) {
@@ -802,6 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Add change event listener that now also updates the counter
             checkbox.addEventListener('change', () => {
+                updateSelectAllCheckboxState(); // Update Select All when individual changes
                 checkCopyButtonState();
                 updateSelectedCount();
             });
@@ -862,21 +797,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ul.appendChild(li);
         });
-
-        if (ul.hasChildNodes()) {
-            storiesListDiv.appendChild(ul);
-            const filterStatus = isFilterActive ? 'filtered' : 'loaded';
-            showStatus(`${displayedCount} stories ${filterStatus}. Select stories to copy.`);
-        } else if (isFilterActive) {
-             storiesListDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>No stories match the selected owner filter(s).</div>';
-             showStatus('No stories match filter.');
-        } else {
-             storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>No active stories found in the selected timebox.</div>';
-             showStatus('No active stories found.');
+        
+        // Initial update for Select All state after displaying
+        updateSelectAllCheckboxState();
+        
+        // Ensure the Select All checkbox is enabled if we have stories
+        if (displayedCount > 0) {
+            selectAllCheckbox.disabled = false;
         }
-        checkCopyButtonState(); // Update button state
-        updateSelectedCount(); // Update count badge
+        
+        storiesListDiv.appendChild(ul);
+        
+        showStatus(`${displayedCount} stories ${filterStatus}. Select stories to copy.`);
     }
+
+    // --- New Function: Update Select All Checkbox State ---
+    function updateSelectAllCheckboxState() {
+        const allStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox');
+        const checkedCount = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox:checked').length;
+        const totalCount = allStoryCheckboxes.length;
+
+        if (totalCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.disabled = true; // Disable only if no stories displayed
+        } else if (checkedCount === totalCount && totalCount > 0) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.disabled = false;
+        } else if (checkedCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.disabled = false; // Ensure checkbox is enabled when stories are present
+        } else { // Some are checked, but not all
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+            selectAllCheckbox.disabled = false;
+        }
+    }
+
+    // --- New Event Listener: Select All Checkbox ---
+    selectAllCheckbox.addEventListener('change', () => {
+        const isChecked = selectAllCheckbox.checked;
+        const allStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox');
+        allStoryCheckboxes.forEach(checkbox => {
+            checkbox.checked = isChecked;
+        });
+        // Update count and button state after toggling all
+        updateSelectedCount();
+        checkCopyButtonState();
+    });
 
     async function fetchStoriesAndTasks(timeboxId) {
         if (!timeboxId) {
@@ -884,10 +854,16 @@ document.addEventListener('DOMContentLoaded', () => {
             copyButton.disabled = true;
             currentStories = []; // Clear stored stories
             populateStoryOwnerFilter(currentStories); // Clear owner filter
+            selectAllCheckbox.checked = false; // Reset Select All
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.disabled = true;
             return;
         }
         showStatus(`Fetching stories...`);
         storiesListDiv.innerHTML = ''; // Clear previous list
+        selectAllCheckbox.checked = false; // Reset Select All
+        selectAllCheckbox.indeterminate = false;
+        selectAllCheckbox.disabled = true;
         copyButton.disabled = true;
         currentStories = []; // Clear stored stories before fetch
         populateStoryOwnerFilter(currentStories); // Clear owner filter
@@ -905,6 +881,10 @@ document.addEventListener('DOMContentLoaded', () => {
             currentStories = storyResponse.Assets; // Store fetched stories
             populateStoryOwnerFilter(currentStories); // Populate the owner filter dropdown
             displayStories(currentStories); // Initial display (no filter active yet)
+            // Ensure the Select All checkbox is always enabled when stories are present
+            if (currentStories.length > 0) {
+                selectAllCheckbox.disabled = false;
+            }
         } else { 
             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
             showStatus('No active stories found.');
@@ -1337,31 +1317,14 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceOwnerFilterSelect.dataset.lastChanged = 'true';
         populateFilterDropdowns(allTimeboxes, false);
         populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
-        // Clear any selected stories when filter changes
         storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
         copyButton.disabled = true;
         updateSelectedCount();
-    });
-    
-    sourceScheduleFilterSelect.addEventListener('choice', () => {
-        sourceScheduleFilterSelect.dataset.lastChanged = 'true';
-        populateFilterDropdowns(allTimeboxes, false);
-        populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
-        // Clear any selected stories when filter changes
-        storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
-        copyButton.disabled = true;
-        updateSelectedCount();
+        updateSelectAllCheckboxState(); // Added
     });
     
     targetOwnerFilterSelect.addEventListener('choice', () => {
         targetOwnerFilterSelect.dataset.lastChanged = 'true';
-        populateFilterDropdowns(allTimeboxes, false);
-        populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
-        checkCopyButtonState();
-    });
-    
-    targetScheduleFilterSelect.addEventListener('choice', () => {
-        targetScheduleFilterSelect.dataset.lastChanged = 'true';
         populateFilterDropdowns(allTimeboxes, false);
         populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
         checkCopyButtonState();
@@ -1380,6 +1343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Selected Owner Values:', selectedValues);
         console.log('Current stories available for filtering:', currentStories?.length);
         displayStories(currentStories);
+        updateSelectAllCheckboxState(); // Update after stories are re-displayed
     });
 
     // Add this new function to handle parallel loading with timeout
@@ -1417,68 +1381,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
     }
 
-    // --- Add a function to setup event listeners for Choices.js instances ---
-    function setupChoicesEventListeners() {
-        // Source filter events
-        sourceOwnerFilterSelect.addEventListener('choice', () => {
-            sourceOwnerFilterSelect.dataset.lastChanged = 'true';
-            populateFilterDropdowns(allTimeboxes, false);
-            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
-            // Clear any selected stories when filter changes
-            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
-            copyButton.disabled = true;
-            updateSelectedCount();
-        });
-        
-        sourceScheduleFilterSelect.addEventListener('choice', () => {
-            sourceScheduleFilterSelect.dataset.lastChanged = 'true';
-            populateFilterDropdowns(allTimeboxes, false);
-            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
-            // Clear any selected stories when filter changes
-            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
-            copyButton.disabled = true;
-            updateSelectedCount();
-        });
-        
-        // Target filter events
-        targetOwnerFilterSelect.addEventListener('choice', () => {
-            targetOwnerFilterSelect.dataset.lastChanged = 'true';
-            populateFilterDropdowns(allTimeboxes, false);
-            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
-            checkCopyButtonState();
-        });
-        
-        targetScheduleFilterSelect.addEventListener('choice', () => {
-            targetScheduleFilterSelect.dataset.lastChanged = 'true';
-            populateFilterDropdowns(allTimeboxes, false);
-            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
-            checkCopyButtonState();
-        });
-        
-        // Main dropdown events
-        sourceTimeboxSelect.addEventListener('choice', () => {
-            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Click "Load Stories" to fetch items for the selected timebox.</div>';
-            copyButton.disabled = true;
-            updateSelectedCount();
-        });
-        
-        targetTimeboxSelect.addEventListener('choice', checkCopyButtonState);
-        targetParentSelect.addEventListener('choice', checkCopyButtonState);
-        
-        // Story owner filter event
-        storyOwnerFilterSelect.addEventListener('change', () => {
-            displayStories(currentStories);
-        });
-    }
-
     // --- Initial Load and Setup ---
     function initializeApp() {
         // Initialize UI components
         initChoices();
         setupPasswordToggles();
-        setupChoicesEventListeners();
         loadSettings();
         
+        // --- Restore essential event listeners here ---
+        // Source filter events (Owner)
+        sourceOwnerFilterSelect.addEventListener('choice', () => {
+            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
+            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
+            copyButton.disabled = true;
+            updateSelectedCount();
+            updateSelectAllCheckboxState();
+        });
+
+        // Target filter events (Owner)
+        targetOwnerFilterSelect.addEventListener('choice', () => {
+            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
+            checkCopyButtonState();
+        });
+
+        // Main dropdown events
+        sourceTimeboxSelect.addEventListener('change', () => { // Use 'change' for consistency or if 'choice' isn't firing reliably after load
+            storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; 
+            copyButton.disabled = true; 
+            currentStories = []; 
+            populateStoryOwnerFilter(currentStories); 
+            updateSelectedCount(); // Reset count when source changes
+            updateSelectAllCheckboxState(); // Reset select all state
+        });
+        
+        targetTimeboxSelect.addEventListener('change', checkCopyButtonState); // Use 'change'
+        targetParentSelect.addEventListener('change', checkCopyButtonState); // Use 'change'
+        
+        // Story owner filter event
+        storyOwnerFilterSelect.addEventListener('change', () => {
+            displayStories(currentStories);
+            updateSelectAllCheckboxState(); // Update select all based on filtered stories
+        });
+        // --- End restored listeners ---
+
         // Setup main button event listeners
         loadStoriesButton.addEventListener('click', () => {
             const timeboxId = sourceTimeboxChoices.getValue()?.value;

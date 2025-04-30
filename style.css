@@ -198,12 +198,32 @@ hr {
     position: relative;
 }
 
+/* Select All checkbox styling */
+#select-all-stories {
+    transform: scale(1.2);
+    cursor: pointer;
+}
+
+#select-all-stories:not(:disabled) + label {
+    color: var(--primary-color);
+    cursor: pointer;
+    font-size: 1.05rem;
+}
+
+#select-all-stories:disabled + label {
+    color: var(--text-light);
+    opacity: 0.7;
+}
+
+.form-check label[for="select-all-stories"] {
+    font-weight: 600;
+}
+
 /* Override the default styles that might be inherited */
 input.choices__input {
     background-color: transparent !important;
     color: var(--text-color);
 }
-
 
 .choices__list--multiple .choices__item {
     background-color: var(--primary-color);
@@ -307,7 +327,7 @@ input.choices__input {
 
 .filter-group {
     flex: 1;
-    min-width: 200px;
+    min-width: 400px;
 }
 
 .filter-label {
