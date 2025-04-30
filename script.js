@@ -12,17 +12,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyButton = document.getElementById('copy-button');
     const statusMessage = document.getElementById('status-message');
     const loadingIndicator = document.getElementById('loading-indicator');
+    const selectedCountBadge = document.getElementById('selected-count'); // New element for displaying count
     // Auth method selection elements
-    const authNtlmRadio = document.getElementById('auth-ntlm'); // New NTLM option
+    const authNtlmRadio = document.getElementById('auth-ntlm'); 
     const authTokenRadio = document.getElementById('auth-token');
     const authBasicRadio = document.getElementById('auth-basic');
-    const ntlmInputSection = document.getElementById('ntlm-input-section'); // New NTLM section
+    const ntlmInputSection = document.getElementById('ntlm-input-section');
     const tokenInputSection = document.getElementById('token-input-section');
     const basicAuthInputSection = document.getElementById('basic-auth-input-section');
     const v1UsernameInput = document.getElementById('v1-username');
     const v1PasswordInput = document.getElementById('v1-password');
-    // Story Owner Filter element (changed from Team)
+    // Password visibility toggle buttons
+    const togglePasswordVisibility = document.getElementById('toggle-password-visibility');
+    const toggleTokenVisibility = document.getElementById('toggle-token-visibility');
+    // Story Owner Filter element
     const storyOwnerFilterSelect = document.getElementById('story-owner-filter');
+
+    // Initialize Choices.js instances
+    let storyOwnerChoices = null;
+    let sourceTimeboxChoices = null;
+    let targetTimeboxChoices = null;
+    let targetParentChoices = null;
+    let sourceOwnerFilterChoices = null;
+    let sourceScheduleFilterChoices = null;
+    let targetOwnerFilterChoices = null;
+    let targetScheduleFilterChoices = null;
 
     // Create filter elements
     const sourceOwnerFilterSelect = document.createElement('select');
@@ -42,7 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
     targetScheduleFilterSelect.className = 'filter-select';
 
     // Add filter elements to the DOM
-    const sourceTimeboxContainer = sourceTimeboxSelect.parentElement;
     const sourceFiltersDiv = document.createElement('div');
     sourceFiltersDiv.className = 'filters-container';
     
@@ -63,9 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Insert into the new placeholder div
     const sourceFiltersContainer = document.getElementById('source-filters-container');
     sourceFiltersContainer.appendChild(sourceFiltersDiv);
-    // sourceTimeboxContainer.insertBefore(sourceFiltersDiv, sourceTimeboxSelect.nextSibling); // Old insertion point
 
-    const targetTimeboxContainer = targetTimeboxSelect.parentElement;
     const targetFiltersDiv = document.createElement('div');
     targetFiltersDiv.className = 'filters-container';
     
@@ -86,39 +97,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Insert into the new placeholder div
     const targetFiltersContainer = document.getElementById('target-filters-container');
     targetFiltersContainer.appendChild(targetFiltersDiv);
-    // targetTimeboxContainer.insertBefore(targetFiltersDiv, targetTimeboxSelect.nextSibling); // Old insertion point
-
-    // Create a style element for the filters
-    const styleElement = document.createElement('style');
-    styleElement.textContent = `
-    .filters-container {
-        display: flex;
-        align-items: center;
-        margin-top: 10px;
-        margin-bottom: 10px;
-        gap: 15px;
-    }
-    .filter-label {
-        font-weight: bold;
-        white-space: nowrap;
-    }
-    .filter-group {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }
-    .filter-group label {
-        min-width: 70px;
-        white-space: nowrap;
-    }
-    .filter-select {
-        min-width: 180px;
-        padding: 4px 8px;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-    }
-    `;
-    document.head.appendChild(styleElement);
 
     // Store all timeboxes for filtering
     let allTimeboxes = [];
@@ -133,6 +111,89 @@ document.addEventListener('DOMContentLoaded', () => {
         password: '',
         targetParentAssetType: 'Epic'
     };
+
+    // Initialize Choices.js dropdowns
+    function initChoices() {
+        // Initialize the multi-select for story owners
+        storyOwnerChoices = new Choices(storyOwnerFilterSelect, {
+            removeItemButton: true,
+            placeholder: true,
+            placeholderValue: 'Select owner(s) to filter',
+            classNames: {
+                containerOuter: 'choices-owner-filter'
+            }
+        });
+
+        // Initialize standard dropdowns
+        sourceTimeboxChoices = new Choices(sourceTimeboxSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Search timeboxes...',
+            placeholder: true,
+            placeholderValue: '-- Select Source Timebox --'
+        });
+
+        targetTimeboxChoices = new Choices(targetTimeboxSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Search timeboxes...',
+            placeholder: true,
+            placeholderValue: '-- Select Target Timebox --'
+        });
+
+        targetParentChoices = new Choices(targetParentSelect, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Search parents...',
+            placeholder: true,
+            placeholderValue: '-- Select Epic (Optional) --'
+        });
+
+        // Initialize filter dropdowns
+        sourceOwnerFilterChoices = new Choices(sourceOwnerFilterSelect, {
+            searchEnabled: true,
+            placeholder: true,
+            placeholderValue: 'All Owners'
+        });
+
+        sourceScheduleFilterChoices = new Choices(sourceScheduleFilterSelect, {
+            searchEnabled: true,
+            placeholder: true,
+            placeholderValue: 'All Schedules'
+        });
+
+        targetOwnerFilterChoices = new Choices(targetOwnerFilterSelect, {
+            searchEnabled: true,
+            placeholder: true,
+            placeholderValue: 'All Owners'
+        });
+
+        targetScheduleFilterChoices = new Choices(targetScheduleFilterSelect, {
+            searchEnabled: true,
+            placeholder: true,
+            placeholderValue: 'All Schedules'
+        });
+    }
+
+    // --- Add Password Toggle Functionality ---
+    function setupPasswordToggles() {
+        if (togglePasswordVisibility) {
+            togglePasswordVisibility.addEventListener('click', () => {
+                const type = v1PasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                v1PasswordInput.setAttribute('type', type);
+                togglePasswordVisibility.innerHTML = type === 'password' 
+                    ? '<i class="bi bi-eye"></i>' 
+                    : '<i class="bi bi-eye-slash"></i>';
+            });
+        }
+        
+        if (toggleTokenVisibility) {
+            toggleTokenVisibility.addEventListener('click', () => {
+                const type = v1TokenInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                v1TokenInput.setAttribute('type', type);
+                toggleTokenVisibility.innerHTML = type === 'password' 
+                    ? '<i class="bi bi-eye"></i>' 
+                    : '<i class="bi bi-eye-slash"></i>';
+            });
+        }
+    }
 
     // --- Settings Handling ---
     function toggleAuthInputs() {
@@ -208,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                   (authBasicRadio.checked ? 'basic' : 'token');
         const newAccessToken = v1TokenInput.value.trim();
         const newUsername = v1UsernameInput.value.trim();
-        const newPassword = v1PasswordInput.value.trim(); // Avoid trimming passwords
+        const newPassword = v1PasswordInput.value; // Avoid trimming passwords
 
         let isValid = true;
         let errorMsg = '';
@@ -252,7 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
         settings.accessToken = newAccessToken;
         settings.username = newUsername;
         // WARNING: Storing plaintext passwords in localStorage is insecure!
-        // Consider more secure alternatives for a real application.
         settings.password = newPassword;
 
         localStorage.setItem('v1CopierSettings', JSON.stringify(settings));
@@ -322,19 +382,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         showLoading(true);
-        let detailedError = null; // Variable to hold detailed error message
+        let detailedError = null; 
         try {
             const response = await fetch(proxyUrl, options);
 
             if (!response.ok) {
                 let errorMsg = `API Error: ${response.status} ${response.statusText}`;
-                // --- Read body as text first to avoid double-read ---
                 const errorBodyText = await response.text(); 
-                detailedError = errorBodyText; // Default detail is the raw text
+                detailedError = errorBodyText; 
                 try {
-                    // --- Try parsing the text as JSON --- 
                     const errorData = JSON.parse(errorBodyText);
-                    // Extract details if JSON parsing succeeded
                     if (errorData.message) {
                         detailedError = errorData.message;
                         errorMsg += ` - ${detailedError}`;
@@ -342,38 +399,43 @@ document.addEventListener('DOMContentLoaded', () => {
                         detailedError = errorData.Exception.Message || 'Unknown server exception';
                         errorMsg += ` - ${detailedError}`;
                     } else if (errorData.error) { 
-                        // Handle structured error from our proxy itself
                         detailedError = errorData.error + (errorData.details ? ` (${JSON.stringify(errorData.details)})` : ''); 
                         errorMsg = detailedError; 
                     }
                 } catch (e) {
-                    // JSON parsing failed, use the raw text already captured
-                    if (detailedError) { // Add raw text if we didn't find a specific message
+                    if (detailedError) { 
                         errorMsg += ` - ${detailedError}`;
                     }
                 }
-                throw new Error(errorMsg);
+                // --- Return detailed error object instead of throwing immediately ---
+                return { 
+                    error: true, 
+                    status: response.status, 
+                    statusText: response.statusText, 
+                    message: detailedError || errorMsg // Use detailedError if available
+                };
+                // throw new Error(errorMsg); // Old behavior
             }
 
-            if (response.status === 204) { // Handle No Content responses
+            if (response.status === 204) { 
                 return null;
             }
 
             return await response.json();
         } catch (error) {
-            console.error('API Call Failed');
-            // Use settingsStatus for connection test errors, statusMessage otherwise
-            const targetStatusElement = suppressStatusUpdate ? settingsStatus : statusMessage;
-            const displayMessage = detailedError ? `Connection failed: ${detailedError}` : `Error: ${error.message}`;
-
+            // This catch block now primarily handles network errors or unexpected issues
+            console.error('API Call Failed (Network/Unexpected)');
+            const displayMessage = `Network Error or unexpected issue: ${error.message}`;
+            
             if (suppressStatusUpdate) {
-                // For connection test, always update settingsStatus
                 settingsStatus.textContent = displayMessage;
                 settingsStatus.className = 'error';
             } else {
                  showStatus(displayMessage, true);
             }
-            return null;
+             // --- Return a generic error object for network/other errors ---
+            return { error: true, message: displayMessage, status: 0 }; 
+            // return null; // Old behavior
         } finally {
             showLoading(false);
         }
@@ -381,12 +443,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI Update Functions ---
     function showLoading(isLoading) {
-        loadingIndicator.style.display = isLoading ? 'block' : 'none';
+        loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+        if (isLoading) {
+            loadingIndicator.classList.remove('d-none');
+            loadingIndicator.classList.add('d-flex');
+        } else {
+            loadingIndicator.classList.add('d-none');
+            loadingIndicator.classList.remove('d-flex');
+        }
     }
 
     function showStatus(message, isError = false) {
-        statusMessage.textContent = message;
-        statusMessage.className = isError ? 'error' : 'success';
+        // Update both text and appearance
+        const iconClass = isError ? 'bi-exclamation-triangle' : 'bi-info-circle';
+        const alertClass = isError ? 'alert-danger' : 'alert-info';
+        
+        statusMessage.className = 'alert ' + alertClass;
+        statusMessage.innerHTML = `<i class="bi ${iconClass} me-2"></i>${message}`;
+        
+        // Add animation for the status update
+        statusMessage.classList.add('animate__animated', 'animate__fadeIn');
+        setTimeout(() => {
+            statusMessage.classList.remove('animate__animated', 'animate__fadeIn');
+        }, 500);
     }
 
     function populateFilterDropdowns(timeboxes, isInitialLoad = true) {
@@ -397,24 +476,29 @@ document.addEventListener('DOMContentLoaded', () => {
         // For source filters
         updateFilterOptions(
             timeboxes.Assets, 
-            sourceOwnerFilterSelect, 
-            sourceScheduleFilterSelect, 
+            sourceOwnerFilterChoices, 
+            sourceScheduleFilterChoices, 
             isInitialLoad
         );
 
         // For target filters
         updateFilterOptions(
             timeboxes.Assets, 
-            targetOwnerFilterSelect, 
-            targetScheduleFilterSelect, 
+            targetOwnerFilterChoices, 
+            targetScheduleFilterChoices, 
             isInitialLoad
         );
     }
 
-    function updateFilterOptions(timeboxAssets, ownerSelect, scheduleSelect, isInitialLoad = false) {
+    function updateFilterOptions(timeboxAssets, ownerChoices, scheduleChoices, isInitialLoad = false) {
+        // Defensive check
+        if (!ownerChoices || !scheduleChoices) {
+            console.error("Choices instance not initialized in updateFilterOptions", { ownerChoices, scheduleChoices });
+            return; 
+        }
         // Get current selections
-        const currentOwner = ownerSelect.value;
-        const currentSchedule = scheduleSelect.value;
+        const currentOwner = ownerChoices.getValue()?.value || ''; 
+        const currentSchedule = scheduleChoices.getValue()?.value || ''; 
 
         // Collect available options based on current filters
         const availableOwners = new Set();
@@ -435,50 +519,53 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Only during initial load or when explicitly directed to update both dropdowns,
-        // update both dropdowns with all available options
+        // Format for Choices.js
+        const ownerChoicesOptions = Array.from(availableOwners).sort().map(owner => ({
+            value: owner,
+            label: owner
+        }));
+        
+        const scheduleChoicesOptions = Array.from(availableSchedules).sort().map(schedule => ({
+            value: schedule,
+            label: schedule
+        }));
+
+        // Only during initial load or when explicitly directed to update both dropdowns
         if (isInitialLoad) {
-            updateDropdown(ownerSelect, Array.from(availableOwners), 'All Owners', currentOwner);
-            updateDropdown(scheduleSelect, Array.from(availableSchedules), 'All Schedules', currentSchedule);
+            ownerChoices.clearChoices();
+            ownerChoices.setChoices([{ value: '', label: 'All Owners', selected: !currentOwner }].concat(ownerChoicesOptions));
+            
+            scheduleChoices.clearChoices();
+            scheduleChoices.setChoices([{ value: '', label: 'All Schedules', selected: !currentSchedule }].concat(scheduleChoicesOptions));
             return;
         }
 
         // When not initial load, we only update the "complementary" dropdown
-        // If we're updating from an owner change, update the schedule options
-        if (ownerSelect.dataset.lastChanged === 'true') {
-            updateDropdown(scheduleSelect, Array.from(availableSchedules), 'All Schedules', currentSchedule);
-            ownerSelect.dataset.lastChanged = 'false';
-        } 
-        // If we're updating from a schedule change, update the owner options
-        else if (scheduleSelect.dataset.lastChanged === 'true') {
-            updateDropdown(ownerSelect, Array.from(availableOwners), 'All Owners', currentOwner);
-            scheduleSelect.dataset.lastChanged = 'false';
+        if (ownerChoices.passedElement.element.dataset.lastChanged === 'true') {
+            scheduleChoices.clearChoices();
+            scheduleChoices.setChoices([{ value: '', label: 'All Schedules', selected: !currentSchedule }].concat(scheduleChoicesOptions));
+            ownerChoices.passedElement.element.dataset.lastChanged = 'false';
+        } else if (scheduleChoices.passedElement.element.dataset.lastChanged === 'true') {
+            ownerChoices.clearChoices();
+            ownerChoices.setChoices([{ value: '', label: 'All Owners', selected: !currentOwner }].concat(ownerChoicesOptions));
+            scheduleChoices.passedElement.element.dataset.lastChanged = 'false';
         }
     }
 
-    function updateDropdown(selectElement, options, defaultText, currentValue) {
-        // Store current scroll position
-        const scrollTop = selectElement.scrollTop;
+    function filterTimeboxes(choicesInstance, ownerFilter, scheduleFilter) {
+        // Clear current choices
+        choicesInstance.clearStore();
         
-        // Build HTML options
-        let optionsHtml = `<option value="">${defaultText}</option>`;
-        
-        options.sort().forEach(option => {
-            // Preserve the current selection if it's in the new options
-            const selected = option === currentValue ? 'selected' : '';
-            optionsHtml += `<option value="${option}" ${selected}>${option}</option>`;
-        });
-        
-        // Set HTML and restore scroll position
-        selectElement.innerHTML = optionsHtml;
-        selectElement.scrollTop = scrollTop;
-    }
-
-    function filterTimeboxes(selectElement, ownerFilter, scheduleFilter) {
-        // Start with a clean dropdown
-        selectElement.innerHTML = '<option value="">-- Select Timebox --</option>';
+        // --- Debug Log 1: Function entry and instance check ---
+        console.log('filterTimeboxes called for:', choicesInstance?.passedElement?.element?.id, 'with filters:', { ownerFilter, scheduleFilter });
+        if (!choicesInstance) {
+            console.error('filterTimeboxes: choicesInstance is null!');
+            return;
+        }
+        // --- End Debug Log 1 ---
         
         if (!allTimeboxes || !allTimeboxes.Assets) {
+            console.warn('filterTimeboxes: allTimeboxes is not populated');
             return;
         }
 
@@ -493,6 +580,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return ownerMatch && scheduleMatch;
         });
 
+        // --- Debug Log 2: Filtered results ---
+        console.log('filterTimeboxes: Filtered timeboxes count:', filteredTimeboxes.length);
+        // console.log('filterTimeboxes: Filtered timeboxes data:', JSON.stringify(filteredTimeboxes)); // Uncomment for detailed data
+        // --- End Debug Log 2 ---
+
         // Helper function to format date string
         const formatDate = (dateString) => {
             if (!dateString) return 'N/A';
@@ -503,54 +595,86 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        // Sort and populate the dropdown
-        filteredTimeboxes.sort((a, b) => {
-            const nameA = a.Attributes?.Name?.value || '';
-            const nameB = b.Attributes?.Name?.value || '';
-            return nameA.localeCompare(nameB);
-        }).forEach(tb => {
-            const name = tb.Attributes?.Name?.value || 'Unnamed Timebox';
-            const id = tb.id;
-            const beginDate = formatDate(tb.Attributes?.BeginDate?.value);
-            const endDate = formatDate(tb.Attributes?.EndDate?.value);
-            const ownerName = tb.Attributes?.['Owner.Name']?.value || 'N/A';
-            const scheduleName = tb.Attributes?.['Schedule.Name']?.value || 'N/A';
+        // Sort timeboxes and format for Choices.js
+        const timeboxOptions = filteredTimeboxes
+            .sort((a, b) => {
+                const nameA = a.Attributes?.Name?.value || '';
+                const nameB = b.Attributes?.Name?.value || '';
+                return nameA.localeCompare(nameB);
+            })
+            .map(tb => {
+                const name = tb.Attributes?.Name?.value || 'Unnamed Timebox';
+                const id = tb.id;
+                const beginDate = formatDate(tb.Attributes?.BeginDate?.value);
+                const endDate = formatDate(tb.Attributes?.EndDate?.value);
+                const ownerName = tb.Attributes?.['Owner.Name']?.value || 'N/A';
+                const scheduleName = tb.Attributes?.['Schedule.Name']?.value || 'N/A';
+                
+                return {
+                    value: id,
+                    label: `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}, Schedule: ${scheduleName}`
+                };
+            });
 
-            const option = document.createElement('option');
-            option.value = id;
-            option.textContent = `${name} (${beginDate} - ${endDate}) Owner: ${ownerName}, Schedule: ${scheduleName}`;
-            selectElement.appendChild(option);
-        });
+        // --- Debug Log 3: Formatted options ---
+        console.log('filterTimeboxes: Formatted options for Choices.js:', timeboxOptions);
+        // --- End Debug Log 3 ---
 
-        // Check if nothing matches filters
+        // Add placeholder option
+        const placeholderOption = {
+            value: '',
+            label: '-- Select Timebox --', // Adjust label based on instance if needed
+            placeholder: true
+        };
+        
+        // Set choices with placeholder first
+        // --- Debug Log 4: Before setChoices ---
+        console.log(`filterTimeboxes: Calling setChoices on ${choicesInstance?.passedElement?.element?.id} with`, [placeholderOption].concat(timeboxOptions));
+        // --- End Debug Log 4 ---
+        choicesInstance.setChoices([placeholderOption].concat(timeboxOptions), 'value', 'label', true);
+        
+        // Handle no results
         if (filteredTimeboxes.length === 0) {
-            const option = document.createElement('option');
-            option.disabled = true;
-            option.textContent = '-- No matching timeboxes --';
-            selectElement.appendChild(option);
+            choicesInstance.setChoices([
+                placeholderOption,
+                { value: 'no-match', label: '-- No matching timeboxes --', disabled: true }
+            ], 'value', 'label', true);
+             // --- Debug Log 5: No results ---
+            console.log(`filterTimeboxes: Set 'no matching timeboxes' for ${choicesInstance?.passedElement?.element?.id}`);
+            // --- End Debug Log 5 ---
         }
     }
 
-    function populateTimeboxSelect(selectElement, timeboxes) {
+    function populateTimeboxSelect(choicesInstance, timeboxes) {
         // Store the timeboxes for filtering if this is the first load
         if (timeboxes && timeboxes.Assets && (!allTimeboxes || !allTimeboxes.Assets)) {
             allTimeboxes = timeboxes;
             populateFilterDropdowns(timeboxes);
         }
         
-        // Get appropriate filter values
+        // Get appropriate filter values based on which dropdown is being populated
         let ownerFilter = '';
         let scheduleFilter = '';
-        
-        if (selectElement === sourceTimeboxSelect) {
-            ownerFilter = sourceOwnerFilterSelect.value;
-            scheduleFilter = sourceScheduleFilterSelect.value;
-        } else if (selectElement === targetTimeboxSelect) {
-            ownerFilter = targetOwnerFilterSelect.value;
-            scheduleFilter = targetScheduleFilterSelect.value;
+        let ownerChoicesInstance = null;
+        let scheduleChoicesInstance = null;
+
+        if (choicesInstance === sourceTimeboxChoices) {
+            ownerChoicesInstance = sourceOwnerFilterChoices;
+            scheduleChoicesInstance = sourceScheduleFilterChoices;
+        } else if (choicesInstance === targetTimeboxChoices) {
+            ownerChoicesInstance = targetOwnerFilterChoices;
+            scheduleChoicesInstance = targetScheduleFilterChoices;
+        }
+
+        // Defensive check
+        if (ownerChoicesInstance && scheduleChoicesInstance) {
+            ownerFilter = ownerChoicesInstance.getValue()?.value || ''; 
+            scheduleFilter = scheduleChoicesInstance.getValue()?.value || '';
+        } else {
+            console.error("Filter Choices instance not found in populateTimeboxSelect", { ownerChoicesInstance, scheduleChoicesInstance });
         }
         
-        filterTimeboxes(selectElement, ownerFilter, scheduleFilter);
+        filterTimeboxes(choicesInstance, ownerFilter, scheduleFilter);
     }
 
     // --- Core Logic Functions (Placeholders) ---
@@ -574,45 +698,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const timeboxes = await v1ApiCall(timeboxQuery);
         if (timeboxes) {
-            populateTimeboxSelect(sourceTimeboxSelect, timeboxes);
-            populateTimeboxSelect(targetTimeboxSelect, timeboxes);
+            populateTimeboxSelect(sourceTimeboxChoices, timeboxes);
+            populateTimeboxSelect(targetTimeboxChoices, timeboxes);
             showStatus('Timeboxes loaded.');
         } else {
             showStatus('Failed to load timeboxes. Check console and settings.', true);
             // Clear dropdowns if fetch failed
-            populateTimeboxSelect(sourceTimeboxSelect, null);
-            populateTimeboxSelect(targetTimeboxSelect, null);
+            populateTimeboxSelect(sourceTimeboxChoices, null);
+            populateTimeboxSelect(targetTimeboxChoices, null);
         }
     }
 
-    // --- Changed: Function to Populate Story Owner Filter (for Multi-select) ---
+    // --- Changed: Function to Populate Story Owner Filter (Choices.js version) ---
     function populateStoryOwnerFilter(stories) {
+        console.log("populateStoryOwnerFilter called with", stories?.length, "stories."); // Log 1
         const owners = new Set();
         if (stories && stories.length > 0) {
-            stories.forEach(story => {
+            stories.forEach((story, index) => {
                 const storyOwners = story.Attributes['Owners.Name']?.value;
+                // console.log(`Story ${index} Owners raw:`, storyOwners); // Uncomment for very detailed logging
                 if (storyOwners) {
-                    // Owners.Name can be a single string or an array of strings
                     if (Array.isArray(storyOwners)) {
                         storyOwners.forEach(owner => { if (owner) owners.add(owner); });
                     } else { // Single owner string
-                        owners.add(storyOwners);
+                        if (typeof storyOwners === 'string' && storyOwners) {
+                           owners.add(storyOwners);
+                        }
                     }
                 }
             });
         }
         
-        // Clear previous options
-        storyOwnerFilterSelect.innerHTML = ''; 
+        console.log("Found unique owners:", Array.from(owners)); // Log 3
         
-        Array.from(owners).sort().forEach(owner => {
-            const option = document.createElement('option');
-            option.value = owner;
-            option.textContent = owner;
-            storyOwnerFilterSelect.appendChild(option);
-        });
+        // Format choices options for Choices.js
+        const ownerChoices = Array.from(owners).sort().map(owner => ({
+            value: owner,
+            label: owner
+        }));
+        
+        console.log("Formatted owner choices for dropdown:", ownerChoices); // Log 4
+        
+        // Set choices using the Choices.js API
+        if (storyOwnerChoices) {
+            console.log("storyOwnerChoices instance found. Updating choices."); // Log 5
+            storyOwnerChoices.clearChoices();
+            storyOwnerChoices.setChoices(ownerChoices, 'value', 'label', true); // Pass 'value', 'label', and true (replace choices)
+        } else {
+            console.error("populateStoryOwnerFilter: storyOwnerChoices instance is null!"); // Log 5 (error case)
+        }
     }
-    // --- End Changed Function ---
 
     // --- Changed: Function to Display Stories (Handles Multi-Owner Filtering) ---
     function displayStories(stories) {
@@ -621,7 +756,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let displayedCount = 0;
 
         // Get selected owners from the multi-select filter
-        const selectedOwners = Array.from(storyOwnerFilterSelect.selectedOptions).map(option => option.value);
+        const selectedOwners = storyOwnerChoices ? 
+            storyOwnerChoices.getValue().map(item => item.value) : [];
         const isFilterActive = selectedOwners.length > 0;
 
         stories.forEach(story => {
@@ -645,10 +781,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             displayedCount++;
             const li = document.createElement('li');
+            
+            // Create checkbox with label in modern style
+            const checkboxWrapper = document.createElement('div');
+            checkboxWrapper.className = 'd-flex align-items-center';
+            
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.value = story.id; // Keep full OID as value for potential reference
+            checkbox.className = 'form-check-input story-checkbox me-2';
+            checkbox.value = story.id; // Keep full OID as value
             checkbox.id = `story-${story.id}`;
+            
             // Store numeric ID in a data attribute
             const numericId = story.id.split(':')[1];
             if (numericId) {
@@ -656,18 +799,38 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 console.warn(`Could not extract numeric ID from ${story.id}`);
             }
-            checkbox.addEventListener('change', checkCopyButtonState);
+            
+            // Add change event listener that now also updates the counter
+            checkbox.addEventListener('change', () => {
+                checkCopyButtonState();
+                updateSelectedCount();
+            });
 
             const label = document.createElement('label');
             const storyName = story.Attributes?.Name?.value || 'Unnamed Story';
             const storyNumber = story.Attributes?.Number?.value || '';
             label.htmlFor = checkbox.id;
-            // Display owners (or 'No Owner')
+            label.className = 'form-check-label story-label';
+            
+            // Use badge for story number for better visibility
+            const storyNumberBadge = document.createElement('span');
+            storyNumberBadge.className = 'badge bg-secondary me-2';
+            storyNumberBadge.textContent = storyNumber;
+            
+            // Use badge for owners with different color
+            const ownersBadge = document.createElement('span');
+            ownersBadge.className = 'badge bg-info ms-2';
             const ownersText = storyOwnersArray.length > 0 ? storyOwnersArray.join(', ') : 'No Owner';
-            label.textContent = `${storyNumber} - ${storyName} (Owner: ${ownersText})`; 
-
-            li.appendChild(checkbox);
-            li.appendChild(label);
+            ownersBadge.textContent = ownersText;
+            
+            // Combine elements with proper structure
+            label.appendChild(storyNumberBadge);
+            label.appendChild(document.createTextNode(storyName));
+            label.appendChild(ownersBadge);
+            
+            checkboxWrapper.appendChild(checkbox);
+            checkboxWrapper.appendChild(label);
+            li.appendChild(checkboxWrapper);
 
             // Display tasks (if any)
             const tasks = story.Attributes['Children:Task']?.value;
@@ -675,11 +838,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (tasks && tasks.length > 0 && taskNames && taskNames.length === tasks.length) {
                 const taskUl = document.createElement('ul');
+                taskUl.className = 'task-list mt-2';
                 tasks.forEach((taskRef, index) => {
                     const taskLi = document.createElement('li');
+                    taskLi.className = 'task-item';
                     const taskName = taskNames[index] || 'Unnamed Task'; 
                     const taskIdRef = taskRef.idref; 
-                    taskLi.textContent = `Task: ${taskName}`;
+                    
+                    // Add task icon
+                    const taskIcon = document.createElement('i');
+                    taskIcon.className = 'bi bi-check2-square me-2';
+                    
+                    taskLi.appendChild(taskIcon);
+                    taskLi.appendChild(document.createTextNode(taskName));
+                    
                     if (taskIdRef) {
                        taskLi.dataset.taskId = taskIdRef;
                     }
@@ -696,16 +868,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const filterStatus = isFilterActive ? 'filtered' : 'loaded';
             showStatus(`${displayedCount} stories ${filterStatus}. Select stories to copy.`);
         } else if (isFilterActive) {
-             storiesListDiv.innerHTML = '<p>No stories match the selected owner filter(s).</p>';
+             storiesListDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>No stories match the selected owner filter(s).</div>';
              showStatus('No stories match filter.');
         } else {
-            // This case shouldn't be reached if the initial check passed, but good fallback
-             storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
+             storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>No active stories found in the selected timebox.</div>';
              showStatus('No active stories found.');
         }
         checkCopyButtonState(); // Update button state
+        updateSelectedCount(); // Update count badge
     }
-    // --- End Changed Function ---
 
     async function fetchStoriesAndTasks(timeboxId) {
         if (!timeboxId) {
@@ -753,14 +924,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function checkCopyButtonState() {
         const selectedStories = getSelectedStories();
-        const targetTimeboxSelected = targetTimeboxSelect.value !== '';
+        const targetTimeboxSelected = targetTimeboxChoices.getValue()?.value !== '';
         copyButton.disabled = !(selectedStories.length > 0 && targetTimeboxSelected);
     }
 
     async function copySelectedItems() {
         const storiesToCopy = getSelectedStories();
-        const targetTimeboxId = targetTimeboxSelect.value;
-        const targetParentId = targetParentSelect.value; // Might be "" if not selected
+        const targetTimeboxId = targetTimeboxChoices.getValue()?.value;
+        const targetParentId = targetParentChoices.getValue()?.value; // Might be "" if not selected
 
         // Button state check no longer includes targetParentId mandatory check
         if (storiesToCopy.length === 0 || !targetTimeboxId) {
@@ -769,7 +940,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         showStatus(`Starting copy of ${storiesToCopy.length} stories...`);
-        copyButton.disabled = true; // Disable button during copy
+        copyButton.disabled = true; 
 
         // Get target timebox scope
         let targetTimeboxScope = null;
@@ -798,49 +969,90 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyInfo = storiesToCopy[i];
             const storyOid = storyInfo.oid;
             const storyNumericId = storyInfo.numericId;
+            let originalStory = null; // Initialize originalStory data
+            let sourceAttributes = null;
+            const originalStoryNumberForLog = storyOid; // Use OID for initial logs
+            
             try {
                 showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
-                 // 1. Fetch details including AssetState, Custom_AcceptanceCriteria, TaggedWith
-                const storySel = 'Name,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,Number,AssetState,Custom_AcceptanceCriteria,TaggedWith'; // Added fields
-                const originalStory = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${storySel}`);
 
-                // Adjust check for single Asset response structure
-                if (!originalStory || !originalStory.Attributes) {
-                     console.error(`Failed to fetch details or received invalid data for story ${storyOid}`);
-                     errorCount++;
-                     continue; // Skip to next story
+                // --- Fetch Original Story with Fallback for Custom_AcceptanceCriteria ---
+                const baseSel = 'Name,Number,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,AssetState,TaggedWith';
+                const optionalField = 'Custom_AcceptanceCriteria';
+                const fullSel = `${baseSel},${optionalField}`; // Try with optional field first
+                let fetchErrorOccurred = false;
+
+                console.log(`Attempting to fetch story ${storyNumericId} with sel: ${fullSel}`);
+                let storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${fullSel}`);
+                
+                // Check if the first attempt failed specifically due to the optional field
+                if (storyResponse?.error && storyResponse.message?.includes(optionalField)) {
+                    console.warn(`Fetching story ${storyNumericId} failed due to ${optionalField}. Retrying without it.`);
+                    showStatus(`Retrying fetch for story ${storyOid} without optional field...`);
+                    storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${baseSel}`);
                 }
+                
+                // Check the final response (either from first or second attempt)
+                if (!storyResponse || storyResponse.error) {
+                    fetchErrorOccurred = true;
+                    const errorDetail = storyResponse?.message || 'Unknown fetch error';
+                    console.error(`Failed to fetch details for story ${storyOid}. Error: ${errorDetail}`);
+                    showStatus(`Error fetching details for story ${storyOid}: ${errorDetail}`, true);
+                    // errorCount++; // Increment error count later if we cannot proceed
+                    // continue; // Don't continue yet, try closing first
+                } else {
+                    originalStory = storyResponse; // Assign successful response
+                    sourceAttributes = originalStory.Attributes;
+                    console.log(`Successfully fetched details for story ${storyOid}`);
+                }
+                // --- End Fetch Original Story ---
+                
+                // Use fetched Number for subsequent logs if available
+                const currentStoryNumberLog = sourceAttributes?.Number?.value || originalStoryNumberForLog;
 
-                const sourceAttributes = originalStory.Attributes;
-                const originalStoryNumber = sourceAttributes.Number?.value || storyOid;
+                // --- Close Original Story If Not Already Closed --- 
+                // Proceed even if fetch failed, maybe closing works?
+                const closedStateId = 128; 
+                const closeOperationName = 'QuickClose';
+                let isAlreadyClosed = sourceAttributes?.AssetState?.value === closedStateId;
 
-                // --- Close Original Story If Not Already Closed (using Operation) ---
-                const closedStateId = 128; // Common AssetState for 'Closed'. Adjust if your V1 instance uses a different ID.
-                const closeOperationName = 'QuickClose'; // Use QuickClose as requested
-
-                if (sourceAttributes.AssetState?.value !== closedStateId) {
-                    showStatus(`Attempting to close original story ${originalStoryNumber} via operation '${closeOperationName}'...`);
+                if (!isAlreadyClosed) {
+                    showStatus(`Attempting to close original story ${currentStoryNumberLog} via operation '${closeOperationName}'...`);
                     try {
-                        // Execute the QuickClose operation
                         const closeResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?op=${closeOperationName}`, 'POST', null); 
                         
-                        if (!closeResponse || !closeResponse.id) { 
-                             console.error(`Operation '${closeOperationName}' may have failed for story ${originalStoryNumber}. Copy will proceed.`);
-                             showStatus(`Warning: Operation '${closeOperationName}' may have failed for story ${originalStoryNumber}. Copying anyway...`, true);
+                        // Check for errors returned by v1ApiCall
+                        if (closeResponse?.error) {
+                             console.error(`Operation '${closeOperationName}' failed for story ${currentStoryNumberLog}. Error: ${closeResponse.message}`);
+                             showStatus(`Warning: Operation '${closeOperationName}' failed for story ${currentStoryNumberLog}. Copy will proceed if possible.`, true);
                         } else {
-                            showStatus(`Original story ${originalStoryNumber} closed via operation. Proceeding with copy...`);
+                            showStatus(`Original story ${currentStoryNumberLog} closed via operation. Proceeding with copy...`);
+                            // Optimistically update local state if closing succeeded
+                            if (sourceAttributes?.AssetState) {
+                                sourceAttributes.AssetState.value = closedStateId;
+                            }
+                            isAlreadyClosed = true; // Mark as closed now
                         }
                     } catch (closeError) {
-                        console.error(`Error executing operation '${closeOperationName}' on story ${originalStoryNumber}:`, closeError);
-                        showStatus(`Warning: Error closing original story ${originalStoryNumber} via operation. Copying anyway...`, true);
-                         // Continue with copy attempt even if closing failed
+                        // Catch unexpected errors during the close call itself
+                        console.error(`Unexpected error executing operation '${closeOperationName}' on story ${currentStoryNumberLog}:`, closeError);
+                        showStatus(`Warning: Error closing original story ${currentStoryNumberLog} via operation. Copying anyway...`, true);
                     }
                 } else {
-                     showStatus(`Original story ${originalStoryNumber} already closed. Proceeding with copy...`);
+                     showStatus(`Original story ${currentStoryNumberLog} already closed. Proceeding with copy...`);
                 }
                 // --- End Close Original Story ---
 
-                // --- Determine Super ID to use ---
+                // --- If fetching failed initially, we cannot proceed with copy ---
+                if (fetchErrorOccurred || !originalStory || !sourceAttributes) {
+                    console.error(`Cannot copy story ${storyOid} due to earlier fetch failure.`);
+                    showStatus(`Skipping copy for story ${storyOid} due to fetch error.`, true);
+                    errorCount++;
+                    continue; // Skip to the next story
+                }
+                // --- End Fetch Failure Check ---
+
+                // --- Determine Super ID to use --- 
                 let superIdToUse = null;
                 let skipSuperAttribute = false;
                 
@@ -864,24 +1076,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Required fields
                         Name: { value: sourceAttributes.Name?.value || 'Unnamed Story', act: 'set' },
                         Timebox: { value: targetTimeboxId, act: 'set' },
-                        Super: { value: superIdToUse, act: 'set' },
+                        // Include Super only if not skipping
+                        ...(!skipSuperAttribute && { Super: { value: superIdToUse, act: 'set' } }),
 
-                        // Use target timebox scope if available, otherwise try to use original scope
+                        // Use target timebox scope or original scope
                         ...(targetTimeboxScope ? 
                             { Scope: { value: targetTimeboxScope, act: 'set' } } : 
                             (sourceAttributes.Scope && sourceAttributes.Scope.value && 
                              { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } })
                         ),
-
-                        // Add other attributes only if they exist in the source response
+                        
+                        // --- Conditionally add Acceptance Criteria --- 
+                        ...(sourceAttributes[optionalField] && sourceAttributes[optionalField].value !== null && { 
+                            [optionalField]: { value: sourceAttributes[optionalField].value, act: 'set' } 
+                        }),
+                        // --- Other attributes ---
                         ...(sourceAttributes.Description && { Description: { value: sourceAttributes.Description.value, act: 'set' } }),
                         ...(sourceAttributes.Priority && sourceAttributes.Priority.value && { Priority: { value: sourceAttributes.Priority.value.idref, act: 'set' } }),
                         ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
                         ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
-                        
-                        // --- Added Acceptance Criteria & Tags --- 
-                        ...(sourceAttributes.Custom_AcceptanceCriteria && sourceAttributes.Custom_AcceptanceCriteria.value !== null && { Custom_AcceptanceCriteria: { value: sourceAttributes.Custom_AcceptanceCriteria.value, act: 'set' } }),
-                        ...(sourceAttributes.TaggedWith && sourceAttributes.TaggedWith.value && sourceAttributes.TaggedWith.value.length > 0 && { TaggedWith: { value: sourceAttributes.TaggedWith.value, act: 'set' } }), // Tags are usually simple strings
+                        ...(sourceAttributes.TaggedWith && sourceAttributes.TaggedWith.value && sourceAttributes.TaggedWith.value.length > 0 && { TaggedWith: { value: sourceAttributes.TaggedWith.value, act: 'set' } }),
                         // --- End Added Fields ---
                         
                         // Add back multi-value relations with strict checks
@@ -904,35 +1118,45 @@ document.addEventListener('DOMContentLoaded', () => {
                         })()),
                     }
                 };
+                
+                // Remove Super attribute entirely if skipSuperAttribute is true
+                if (skipSuperAttribute) {
+                    delete newStoryPayload.Attributes.Super;
+                }
 
                 // 3. Create the new story
                 const createStoryResponse = await v1ApiCall('rest-1.v1/Data/Story', 'POST', newStoryPayload);
-                if (!createStoryResponse || !createStoryResponse.id) {
-                    console.error(`Failed to create copy for story ${storyOid}`);
+                
+                // Check for errors returned by v1ApiCall
+                if (!createStoryResponse || createStoryResponse.error) {
+                    const errorDetail = createStoryResponse?.message || 'Unknown create error';
+                    console.error(`Failed to create copy for story ${storyOid}. Error: ${errorDetail}`);
+                    showStatus(`Error creating copy for ${storyOid}: ${errorDetail}`, true);
                     errorCount++;
                     continue; // Skip to next story
                 }
                 const newStoryId = createStoryResponse.id;
                 showStatus(`Created new story ${newStoryId}. Fetching original tasks...`);
 
-                // 4. Fetch original tasks separately, including Status.ID, ToDo, TaggedWith
+                // 4. Fetch original tasks separately
                 let originalTasks = [];
-                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID,TaggedWith'; // Added TaggedWith
-                
+                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID,TaggedWith';
                 try {
-                    const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
+                    const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent=\'${storyOid}\'`);
                     
-                    if (tasksResponse && tasksResponse.Assets) {
+                    if (tasksResponse && !tasksResponse.error && tasksResponse.Assets) {
                         originalTasks = tasksResponse.Assets;
                         showStatus(`Found ${originalTasks.length} tasks for ${storyOid}. Copying...`);
+                    } else if (tasksResponse?.error) {
+                        showStatus(`Warning: Could not fetch tasks for story ${storyOid} due to error: ${tasksResponse.message}. Story copied without tasks.`, true);
                     } else {
                         showStatus(`No tasks found for ${storyOid}. Continuing...`);
                     }
                 } catch (error) {
-                    console.error(`Error fetching tasks for story ${storyOid}:`, error);
+                    console.error(`Unexpected error fetching tasks for story ${storyOid}:`, error);
                     showStatus(`Warning: Could not fetch tasks for story ${storyOid}. Story was copied without tasks.`, true);
                 }
-
+                
                 // 5. Copy Tasks for the new story
                 let taskSuccessCount = 0;
                 let taskErrorCount = 0;
@@ -1026,10 +1250,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
             } catch (error) {
-                console.error(`Error copying story ${storyOid}:`, error);
-                showStatus(`Error copying story ${storyOid}: ${error.message}`, true);
+                // Catch any truly unexpected errors within the loop
+                console.error(`Unexpected error copying story ${storyOid}:`, error);
+                showStatus(`Unexpected error copying story ${storyOid}: ${error.message}`, true);
                 errorCount++;
-                // Optional: Add retry logic or more specific error handling here
             }
         }
 
@@ -1072,13 +1296,13 @@ document.addEventListener('DOMContentLoaded', () => {
                  settingsStatus.className = 'error';
             }
             // Clear dropdowns if connection fails
-            populateTimeboxSelect(sourceTimeboxSelect, null);
-            populateTimeboxSelect(targetTimeboxSelect, null);
-            populateParentSelect(targetParentSelect, null);
+            populateTimeboxSelect(sourceTimeboxChoices, null);
+            populateTimeboxSelect(targetTimeboxChoices, null);
+            populateParentSelect(targetParentChoices, null);
         }
     }
 
-    // --- New Function to Fetch Target Parents ---
+    // --- Modified Function to Fetch Target Parents ---
     async function fetchTargetParents() {
         const parentAssetType = settings.targetParentAssetType; 
         if (!parentAssetType) {
@@ -1090,38 +1314,63 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fetch active parents of the configured type
         const parents = await v1ApiCall(`rest-1.v1/Data/${parentAssetType}?sel=Name,Number&where=AssetState=\'64\'`);
         if (parents) {
-            populateParentSelect(targetParentSelect, parents);
+            populateParentSelect(targetParentChoices, parents); // Pass the Choices instance
             showStatus('Target parents loaded.', false); // Clear previous status if successful
         } else {
             showStatus(`Failed to load target parents (${parentAssetType}). Check asset type and console.`, true);
-            populateParentSelect(targetParentSelect, null); // Clear dropdown
+            populateParentSelect(targetParentChoices, null); // Pass the Choices instance
         }
     }
 
-    // --- New Function to Populate Parent Select ---
-    function populateParentSelect(selectElement, parents) {
-        selectElement.innerHTML = '<option value="">-- Select Target Parent (Optional) --</option>'; // Changed to Optional
+    // --- Modified Function to Populate Parent Select (using Choices API) ---
+    function populateParentSelect(choicesInstance, parents) { 
+        // --- Add Defensive Check --- 
+        if (!choicesInstance) {
+            console.error("populateParentSelect called with null choicesInstance");
+            return; // Exit if the instance isn't initialized
+        }
+        // --- End Defensive Check ---
+        
+        choicesInstance.clearStore(); // Clear previous selections and choices
+
+        const placeholder = { 
+            value: '', 
+            label: '-- Select Target Parent (Optional) --', 
+            selected: true, 
+            disabled: false, 
+            placeholder: true 
+        };
+        
+        let parentOptions = [placeholder]; // Start with the placeholder
+
         if (parents && parents.Assets) {
-            parents.Assets.sort((a, b) => {
-                const nameA = a.Attributes?.Name?.value || '';
-                const nameB = b.Attributes?.Name?.value || '';
-                return nameA.localeCompare(nameB);
-            }).forEach(p => {
-                const name = p.Attributes?.Name?.value || 'Unnamed Parent';
-                const number = p.Attributes?.Number?.value || '';
-                const id = p.id;
-                const option = document.createElement('option');
-                option.value = id; // Store the full OID (e.g., Epic:123)
-                option.textContent = `${number} - ${name}`;
-                selectElement.appendChild(option);
-            });
+            const sortedParents = parents.Assets
+                .sort((a, b) => {
+                    const nameA = a.Attributes?.Name?.value || '';
+                    const nameB = b.Attributes?.Name?.value || '';
+                    return nameA.localeCompare(nameB);
+                })
+                .map(p => {
+                    const name = p.Attributes?.Name?.value || 'Unnamed Parent';
+                    const number = p.Attributes?.Number?.value || '';
+                    const id = p.id;
+                    return {
+                        value: id, // Store the full OID (e.g., Epic:123)
+                        label: `${number} - ${name}`
+                    };
+                });
+            parentOptions = parentOptions.concat(sortedParents);
         } else {
              console.warn("No target parents found or invalid format:", parents);
+             // Optional: Add a disabled option if no parents found
+             // parentOptions.push({ value: 'no-parents', label: '-- No parents found --', disabled: true });
         }
+
+        choicesInstance.setChoices(parentOptions, 'value', 'label', true); // Replace choices using Choices API
     }
 
     // --- Event Listeners ---
-    loadStoriesButton.addEventListener('click', () => fetchStoriesAndTasks(sourceTimeboxSelect.value));
+    loadStoriesButton.addEventListener('click', () => fetchStoriesAndTasks(sourceTimeboxChoices.getValue()?.value));
     copyButton.addEventListener('click', copySelectedItems);
     sourceTimeboxSelect.addEventListener('change', () => {
         storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; // Clear stories when source changes
@@ -1133,43 +1382,54 @@ document.addEventListener('DOMContentLoaded', () => {
     targetParentSelect.addEventListener('change', checkCopyButtonState);
 
     // Add filter event listeners
-    sourceOwnerFilterSelect.addEventListener('change', () => {
+    sourceOwnerFilterSelect.addEventListener('choice', () => {
         sourceOwnerFilterSelect.dataset.lastChanged = 'true';
         populateFilterDropdowns(allTimeboxes, false);
-        populateTimeboxSelect(sourceTimeboxSelect, allTimeboxes);
+        populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
         // Clear any selected stories when filter changes
-        storiesListDiv.innerHTML = '<p>Select a timebox and click "Load Stories".</p>';
+        storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
         copyButton.disabled = true;
+        updateSelectedCount();
     });
     
-    sourceScheduleFilterSelect.addEventListener('change', () => {
+    sourceScheduleFilterSelect.addEventListener('choice', () => {
         sourceScheduleFilterSelect.dataset.lastChanged = 'true';
         populateFilterDropdowns(allTimeboxes, false);
-        populateTimeboxSelect(sourceTimeboxSelect, allTimeboxes);
+        populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
         // Clear any selected stories when filter changes
-        storiesListDiv.innerHTML = '<p>Select a timebox and click "Load Stories".</p>';
+        storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
         copyButton.disabled = true;
+        updateSelectedCount();
     });
     
-    targetOwnerFilterSelect.addEventListener('change', () => {
+    targetOwnerFilterSelect.addEventListener('choice', () => {
         targetOwnerFilterSelect.dataset.lastChanged = 'true';
         populateFilterDropdowns(allTimeboxes, false);
-        populateTimeboxSelect(targetTimeboxSelect, allTimeboxes);
+        populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
         checkCopyButtonState();
     });
     
-    targetScheduleFilterSelect.addEventListener('change', () => {
+    targetScheduleFilterSelect.addEventListener('choice', () => {
         targetScheduleFilterSelect.dataset.lastChanged = 'true';
         populateFilterDropdowns(allTimeboxes, false);
-        populateTimeboxSelect(targetTimeboxSelect, allTimeboxes);
+        populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
         checkCopyButtonState();
     });
 
     // --- Changed: Event Listener for Story Owner Filter ---
     storyOwnerFilterSelect.addEventListener('change', () => {
-        displayStories(currentStories); // Re-display stories based on new selection
+        console.log('Story Owner Filter changed!');
+        if (!storyOwnerChoices) {
+            console.error('storyOwnerChoices instance is null in event listener');
+            return;
+        }
+        const selectedItems = storyOwnerChoices.getValue();
+        console.log('Selected Owner Items:', selectedItems);
+        const selectedValues = storyOwnerChoices.getValue(true);
+        console.log('Selected Owner Values:', selectedValues);
+        console.log('Current stories available for filtering:', currentStories?.length);
+        displayStories(currentStories);
     });
-    // --- End Changed Event Listener ---
 
     // Add this new function to handle parallel loading with timeout
     async function loadInitialData() {
@@ -1194,6 +1454,98 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Initial Load ---
-    loadSettings();
+    // --- Function to update the selected count badge ---
+    function updateSelectedCount() {
+        const selectedStories = getSelectedStories();
+        selectedCountBadge.textContent = selectedStories.length;
+        
+        // Add animation for the counter
+        selectedCountBadge.classList.add('badge-pulse');
+        setTimeout(() => {
+            selectedCountBadge.classList.remove('badge-pulse');
+        }, 500);
+    }
+
+    // --- Add a function to setup event listeners for Choices.js instances ---
+    function setupChoicesEventListeners() {
+        // Source filter events
+        sourceOwnerFilterSelect.addEventListener('choice', () => {
+            sourceOwnerFilterSelect.dataset.lastChanged = 'true';
+            populateFilterDropdowns(allTimeboxes, false);
+            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
+            // Clear any selected stories when filter changes
+            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
+            copyButton.disabled = true;
+            updateSelectedCount();
+        });
+        
+        sourceScheduleFilterSelect.addEventListener('choice', () => {
+            sourceScheduleFilterSelect.dataset.lastChanged = 'true';
+            populateFilterDropdowns(allTimeboxes, false);
+            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
+            // Clear any selected stories when filter changes
+            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
+            copyButton.disabled = true;
+            updateSelectedCount();
+        });
+        
+        // Target filter events
+        targetOwnerFilterSelect.addEventListener('choice', () => {
+            targetOwnerFilterSelect.dataset.lastChanged = 'true';
+            populateFilterDropdowns(allTimeboxes, false);
+            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
+            checkCopyButtonState();
+        });
+        
+        targetScheduleFilterSelect.addEventListener('choice', () => {
+            targetScheduleFilterSelect.dataset.lastChanged = 'true';
+            populateFilterDropdowns(allTimeboxes, false);
+            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
+            checkCopyButtonState();
+        });
+        
+        // Main dropdown events
+        sourceTimeboxSelect.addEventListener('choice', () => {
+            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Click "Load Stories" to fetch items for the selected timebox.</div>';
+            copyButton.disabled = true;
+            updateSelectedCount();
+        });
+        
+        targetTimeboxSelect.addEventListener('choice', checkCopyButtonState);
+        targetParentSelect.addEventListener('choice', checkCopyButtonState);
+        
+        // Story owner filter event
+        storyOwnerFilterSelect.addEventListener('change', () => {
+            displayStories(currentStories);
+        });
+    }
+
+    // --- Initial Load and Setup ---
+    function initializeApp() {
+        // Initialize UI components
+        initChoices();
+        setupPasswordToggles();
+        setupChoicesEventListeners();
+        loadSettings();
+        
+        // Setup main button event listeners
+        loadStoriesButton.addEventListener('click', () => {
+            const timeboxId = sourceTimeboxChoices.getValue()?.value;
+            fetchStoriesAndTasks(timeboxId);
+        });
+        
+        copyButton.addEventListener('click', copySelectedItems);
+        saveSettingsButton.addEventListener('click', saveSettings);
+        
+        // Setup auth method radio buttons
+        authTokenRadio.addEventListener('change', toggleAuthInputs);
+        authBasicRadio.addEventListener('change', toggleAuthInputs);
+        authNtlmRadio.addEventListener('change', toggleAuthInputs);
+        
+        // Initialize the selected count
+        updateSelectedCount();
+    }
+
+    // Start the app
+    initializeApp();
 });
