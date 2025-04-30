@@ -288,12 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await testConnection(); // Call the connection test
     }
 
-    saveSettingsButton.addEventListener('click', saveSettings);
-    // Add event listeners for radio buttons
-    authTokenRadio.addEventListener('change', toggleAuthInputs);
-    authBasicRadio.addEventListener('change', toggleAuthInputs);
-    authNtlmRadio.addEventListener('change', toggleAuthInputs);
-
     // --- API Call Helper ---
     async function v1ApiCall(endpoint, method = 'GET', body = null, suppressStatusUpdate = false) {
         if (!settings.baseUrl) {
@@ -486,13 +480,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function filterTimeboxes(choicesInstance, ownerFilter) {
-        // Clear current choices
         choicesInstance.clearStore();
         
         // --- Debug Log 1: Function entry and instance check ---
-        console.log('filterTimeboxes called for:', choicesInstance?.passedElement?.element?.id, 'with filters:', { ownerFilter });
+        // console.log('filterTimeboxes called for:', choicesInstance?.passedElement?.element?.id, 'with filters:', { ownerFilter });
         if (!choicesInstance) {
-            console.error('filterTimeboxes: choicesInstance is null!');
+            console.error('filterTimeboxes: choicesInstance is null!'); // Keep error
             return;
         }
         // --- End Debug Log 1 ---
@@ -512,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // --- Debug Log 2: Filtered results ---
-        console.log('filterTimeboxes: Filtered timeboxes count:', filteredTimeboxes.length);
+        // console.log('filterTimeboxes: Filtered timeboxes count:', filteredTimeboxes.length);
         // console.log('filterTimeboxes: Filtered timeboxes data:', JSON.stringify(filteredTimeboxes)); // Uncomment for detailed data
         // --- End Debug Log 2 ---
 
@@ -547,7 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
         // --- Debug Log 3: Formatted options ---
-        console.log('filterTimeboxes: Formatted options for Choices.js:', timeboxOptions);
+        // console.log('filterTimeboxes: Formatted options for Choices.js:', timeboxOptions);
         // --- End Debug Log 3 ---
 
         // Add placeholder option
@@ -559,7 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Set choices with placeholder first
         // --- Debug Log 4: Before setChoices ---
-        console.log(`filterTimeboxes: Calling setChoices on ${choicesInstance?.passedElement?.element?.id} with`, [placeholderOption].concat(timeboxOptions));
+        // console.log(`filterTimeboxes: Calling setChoices on ${choicesInstance?.passedElement?.element?.id} with`, [placeholderOption].concat(timeboxOptions));
         // --- End Debug Log 4 ---
         choicesInstance.setChoices([placeholderOption].concat(timeboxOptions), 'value', 'label', true);
         
@@ -570,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 { value: 'no-match', label: '-- No matching timeboxes --', disabled: true }
             ], 'value', 'label', true);
              // --- Debug Log 5: No results ---
-            console.log(`filterTimeboxes: Set 'no matching timeboxes' for ${choicesInstance?.passedElement?.element?.id}`);
+            // console.log(`filterTimeboxes: Set 'no matching timeboxes' for ${choicesInstance?.passedElement?.element?.id}`);
             // --- End Debug Log 5 ---
         }
     }
@@ -640,7 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Changed: Function to Populate Story Owner Filter (Choices.js version) ---
     function populateStoryOwnerFilter(stories) {
-        console.log("populateStoryOwnerFilter called with", stories?.length, "stories."); // Log 1
+        // console.log("populateStoryOwnerFilter called with", stories?.length, "stories."); // Log 1
         const owners = new Set();
         if (stories && stories.length > 0) {
             stories.forEach((story, index) => {
@@ -658,21 +651,21 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        console.log("Found unique owners:", Array.from(owners)); // Log 3
+        // console.log("Found unique owners:", Array.from(owners)); // Log 3
         
         // Format choices options for Choices.js
-        const ownerChoices = Array.from(owners).sort().map(owner => ({
+        const ownerChoicesOptions = Array.from(owners).sort().map(owner => ({
             value: owner,
             label: owner
         }));
         
-        console.log("Formatted owner choices for dropdown:", ownerChoices); // Log 4
+        // console.log("Formatted owner choices for dropdown:", ownerChoicesOptions); // Log 4
         
         // Set choices using the Choices.js API
         if (storyOwnerChoices) {
-            console.log("storyOwnerChoices instance found. Clearing store and updating choices."); // Log 5
+            // console.log("storyOwnerChoices instance found. Clearing store and updating choices."); // Log 5
             storyOwnerChoices.clearStore(); // Use clearStore for a more thorough reset
-            storyOwnerChoices.setChoices(ownerChoices, 'value', 'label', true); // Pass 'value', 'label', and true (replace choices)
+            storyOwnerChoices.setChoices(ownerChoicesOptions, 'value', 'label', true); // Pass 'value', 'label', and true (replace choices)
         } else {
             console.error("populateStoryOwnerFilter: storyOwnerChoices instance is null!"); // Log 5 (error case)
         }
@@ -680,183 +673,252 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Changed: Function to Display Stories (Handles Multi-Owner Filtering) ---
     function displayStories(stories) {
-        // console.log('[displayStories] Function called.');
-        // Log the currently selected owners according to Choices.js at the start of the function
-        /*
-        if (storyOwnerChoices) {
-            console.log('[displayStories] Selected owners at start:', storyOwnerChoices.getValue(true));
-        } else {
-            console.log('[displayStories] storyOwnerChoices not initialized at start.');
-        }
-        */
-
-        storiesListDiv.innerHTML = ''; // Clear previous list
-        selectAllCheckbox.checked = false; // Reset select all checkbox
+        storiesListDiv.innerHTML = '';
+        selectAllCheckbox.checked = false;
         selectAllCheckbox.indeterminate = false;
-        
-        // Create a list container
         const ul = document.createElement('ul');
         ul.className = 'list-unstyled';
-        
-        // Filter stories based on selected owners
         const ownerFilter = storyOwnerChoices ? storyOwnerChoices.getValue().map(owner => owner.value) : [];
         let displayedCount = 0;
-        let filterStatus = "";
-        
-        // Loop through each story and create list items
+        let filterStatus = ownerFilter.length > 0 ? `filtered by owner(s): ${ownerFilter.join(', ')}` : "(displaying all)";
+
         stories.forEach(story => {
+            // --- Filtering Logic (remains the same) ---
             const storyOwnersValue = story.Attributes['Owners.Name']?.value;
             let storyOwnersArray = [];
             if (storyOwnersValue) {
                  storyOwnersArray = Array.isArray(storyOwnersValue) ? storyOwnersValue : [storyOwnersValue];
             }
-            
-            // Apply owner filter - check if any of the story's owners are in the selected list
             let ownerMatch = false;
             if (!ownerFilter.length) {
-                ownerMatch = true; // Show all if filter is not active
+                ownerMatch = true;
             } else {
-                ownerMatch = storyOwnersArray.some(storyOwner => ownerFilter.includes(storyOwner));
+                ownerMatch = storyOwnersArray.some(storyOwner => storyOwner && ownerFilter.includes(storyOwner));
             }
-
             if (!ownerMatch) {
-                return; // Skip story if it doesn't match the selected owner filter
+                return; // Skip story if it doesn't match filter
             }
-
             displayedCount++;
-            const li = document.createElement('li');
-            
-            // Create checkbox with label in modern style
+            // --- End Filtering Logic ---
+
+            const li = document.createElement('li'); // Create li for the story
+
+            // --- Story Checkbox/Label/Badges (remains the same) ---
             const checkboxWrapper = document.createElement('div');
             checkboxWrapper.className = 'd-flex align-items-center';
             
+            const label = document.createElement('label');
+            const storyId = story.id;
+            label.htmlFor = `story-${storyId}`;
+            label.className = 'form-check-label story-label flex-grow-1';
+
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.className = 'form-check-input story-checkbox me-2';
-            checkbox.value = story.id; // Keep full OID as value
-            checkbox.id = `story-${story.id}`;
-            
-            // Store numeric ID in a data attribute
-            const numericId = story.id.split(':')[1];
+            checkbox.value = storyId;
+            checkbox.id = `story-${storyId}`;
+            checkbox.dataset.storyOid = storyId;
+            const numericId = storyId.split(':')[1];
             if (numericId) {
                 checkbox.dataset.numericId = numericId;
             } else {
-                console.warn(`Could not extract numeric ID from ${story.id}`);
+                console.warn(`Could not extract numeric ID from ${storyId}`);
             }
             
-            // Add change event listener that now also updates the counter
-            checkbox.addEventListener('change', () => {
-                updateSelectAllCheckboxState(); // Update Select All when individual changes
-                checkCopyButtonState();
-                updateSelectedCount();
-            });
-
-            const label = document.createElement('label');
+            label.appendChild(checkbox);
+            
             const storyName = story.Attributes?.Name?.value || 'Unnamed Story';
             const storyNumber = story.Attributes?.Number?.value || '';
-            label.htmlFor = checkbox.id;
-            label.className = 'form-check-label story-label';
             
-            // Use badge for story number for better visibility
             const storyNumberBadge = document.createElement('span');
             storyNumberBadge.className = 'badge bg-secondary me-2';
             storyNumberBadge.textContent = storyNumber;
             
-            // Use badge for owners with different color
             const ownersBadge = document.createElement('span');
             ownersBadge.className = 'badge bg-info ms-2';
             const ownersText = storyOwnersArray.length > 0 ? storyOwnersArray.join(', ') : 'No Owner';
             ownersBadge.textContent = ownersText;
             
-            // Combine elements with proper structure
             label.appendChild(storyNumberBadge);
-            label.appendChild(document.createTextNode(storyName));
+            label.appendChild(document.createTextNode(` ${storyName} `));
             label.appendChild(ownersBadge);
             
-            checkboxWrapper.appendChild(checkbox);
             checkboxWrapper.appendChild(label);
             li.appendChild(checkboxWrapper);
+            // --- End Story Checkbox/Label/Badges ---
 
-            // Display tasks (if any)
+
+            // --- Task Display Logic ---
             const tasks = story.Attributes['Children:Task']?.value;
-            const taskNames = story.Attributes['Children:Task.Name']?.value; 
+            const taskNames = story.Attributes['Children:Task.Name']?.value;
+            const taskNumbers = story.Attributes['Children:Task.Number']?.value;
+            const taskToDos = story.Attributes['Children:Task.ToDo']?.value; // Get ToDo array
 
-            if (tasks && tasks.length > 0 && taskNames && taskNames.length === tasks.length) {
+            // --- DEBUG LOG: Check Arrays ---
+            console.log(`[DEBUG] Story ${story.id} (${story.Attributes.Number?.value || 'No Number'}): Checking task arrays.`);
+            console.log(`  tasks exists: ${!!tasks}, length: ${tasks?.length}`);
+            console.log(`  taskNames exists: ${!!taskNames}, length: ${taskNames?.length}`);
+            console.log(`  taskNumbers exists: ${!!taskNumbers}, length: ${taskNumbers?.length}`);
+            console.log(`  taskToDos exists: ${!!taskToDos}, length: ${taskToDos?.length}`);
+            // --- END DEBUG LOG ---
+
+            // --- Relaxed IF Condition ---
+            // Only require the main 'tasks' array to exist and have items.
+            if (tasks && tasks.length > 0) {
+
+                // Optional: Add warnings if essential parallel arrays are missing/mismatched, but proceed cautiously.
+                if (!taskNames || tasks.length !== taskNames.length) {
+                     console.warn(`[WARN] Story ${story.id}: Missing or mismatched length for taskNames. Task display might be incomplete.`);
+                }
+                if (!taskNumbers || tasks.length !== taskNumbers.length) {
+                     console.warn(`[WARN] Story ${story.id}: Missing or mismatched length for taskNumbers. Task display might be incomplete.`);
+                }
+                // We won't strictly require taskToDos array to exist or match length here.
+
                 const taskUl = document.createElement('ul');
                 taskUl.className = 'task-list mt-2';
+
                 tasks.forEach((taskRef, index) => {
+                    // --- Access data using index, with added safety ---
+                    const taskName = (taskNames && index < taskNames.length) ? taskNames[index] : 'Unnamed Task';
+                    const taskNumber = (taskNumbers && index < taskNumbers.length) ? taskNumbers[index] : '';
+                    const taskIdRef = taskRef.idref;
+                    const taskToDoRaw = (taskToDos && index < taskToDos.length) ? taskToDos[index] : null; // Safe access
+                    // --------------------------------
+
+                    // --- Task Item Creation (li, label, checkbox) ---
                     const taskLi = document.createElement('li');
                     taskLi.className = 'task-item';
-                    const taskName = taskNames[index] || 'Unnamed Task'; 
-                    const taskIdRef = taskRef.idref; 
-                    
-                    // Add task icon
-                    const taskIcon = document.createElement('i');
-                    taskIcon.className = 'bi bi-check2-square me-2';
-                    
-                    taskLi.appendChild(taskIcon);
-                    taskLi.appendChild(document.createTextNode(taskName));
-                    
-                    if (taskIdRef) {
-                       taskLi.dataset.taskId = taskIdRef;
+                    const taskLabel = document.createElement('label');
+                    const taskCheckboxId = `task-${taskIdRef || index}`;
+                    taskLabel.htmlFor = taskCheckboxId;
+                    taskLabel.className = 'form-check-label task-label d-flex align-items-center w-100';
+                    const taskCheckbox = document.createElement('input');
+                    taskCheckbox.type = 'checkbox';
+                    taskCheckbox.className = 'form-check-input task-checkbox me-2';
+                    taskCheckbox.value = taskIdRef;
+                    taskCheckbox.id = taskCheckboxId;
+                    taskCheckbox.dataset.storyOid = story.id;
+                    taskCheckbox.dataset.taskId = taskIdRef;
+                    // --- End Task Item Creation ---
+
+
+                    // --- Calculate ToDo & Create Badges ---
+                    let taskToDoHours = '0';
+                    if (taskToDoRaw !== null && taskToDoRaw !== undefined) {
+                        const parsedToDo = parseFloat(taskToDoRaw);
+                        taskToDoHours = !isNaN(parsedToDo) ? parsedToDo.toFixed(2) : '0';
                     }
+                    const hoursBadge = document.createElement('span');
+                    hoursBadge.className = 'task-hours badge bg-success ms-auto ps-2 pe-2';
+                    hoursBadge.textContent = `${taskToDoHours}h`;
+
+                    const taskNumberBadge = document.createElement('span');
+                    taskNumberBadge.className = 'badge bg-secondary me-2';
+                    taskNumberBadge.textContent = taskNumber;
+                    // --- End Calculate ToDo & Create Badges ---
+
+
+                    // --- Append elements to task label ---
+                    taskLabel.appendChild(taskCheckbox);
+                    if (taskNumber) { // Only add badge if number exists and is not empty
+                        taskLabel.appendChild(taskNumberBadge);
+                    }
+                    taskLabel.appendChild(document.createTextNode(` ${taskName} `)); // Use safely accessed taskName
+                    taskLabel.appendChild(hoursBadge);
+                    // --- End Append elements to task label ---
+
+                    taskLi.appendChild(taskLabel);
                     taskUl.appendChild(taskLi);
                 });
-                li.appendChild(taskUl);
-            }
+                li.appendChild(taskUl); // Append the populated task list to the story li
+            } // End if (tasks && tasks.length > 0)
 
+            // --- Append Story LI to Main UL ---
+            // This ensures the story LI is added regardless of whether tasks were rendered
             ul.appendChild(li);
-        });
-        
-        // Initial update for Select All state after displaying
-        updateSelectAllCheckboxState();
-        
-        // Ensure the Select All checkbox is enabled if we have stories
-        if (displayedCount > 0) {
-            selectAllCheckbox.disabled = false;
-        }
-        
+            // --- End Append Story LI ---
+
+        }); // End stories.forEach
+
+        // --- Final updates after loop (remains the same) ---
+        const initialState = calculateSelectAllState();
+        applySelectAllState(initialState);
+        selectAllCheckbox.disabled = initialState.disabled;
         storiesListDiv.appendChild(ul);
-        
         showStatus(`${displayedCount} stories ${filterStatus}. Select stories to copy.`);
+        // --- End Final updates ---
     }
 
-    // --- New Function: Update Select All Checkbox State ---
-    function updateSelectAllCheckboxState() {
-        const allStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox');
-        const checkedCount = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox:checked').length;
-        const totalCount = allStoryCheckboxes.length;
+    // --- Calculate the desired state for the Select All checkbox ---
+    function calculateSelectAllState() {
+        // Consider ALL visible checkboxes (stories AND tasks)
+        const allCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox, input[type="checkbox"].task-checkbox');
+        const checkedCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox:checked, input[type="checkbox"].task-checkbox:checked');
+        
+        const totalCount = allCheckboxes.length;
+        const checkedCount = checkedCheckboxes.length;
+
+        let state = { checked: false, indeterminate: false, disabled: true };
 
         if (totalCount === 0) {
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = false;
-            selectAllCheckbox.disabled = true; // Disable only if no stories displayed
-        } else if (checkedCount === totalCount && totalCount > 0) {
-            selectAllCheckbox.checked = true;
-            selectAllCheckbox.indeterminate = false;
-            selectAllCheckbox.disabled = false;
+            // Keep default state (disabled, unchecked, not indeterminate)
+        } else if (checkedCount === totalCount) {
+            // All checked
+            state = { checked: true, indeterminate: false, disabled: false };
         } else if (checkedCount === 0) {
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = false;
-            selectAllCheckbox.disabled = false; // Ensure checkbox is enabled when stories are present
-        } else { // Some are checked, but not all
-            selectAllCheckbox.checked = false;
-            selectAllCheckbox.indeterminate = true;
-            selectAllCheckbox.disabled = false;
+            // None checked
+            state = { checked: false, indeterminate: false, disabled: false };
+        } else {
+            // Some checked (indeterminate state)
+            state = { checked: false, indeterminate: true, disabled: false };
         }
+        // console.log('[calculateSelectAllState] Calculated state:', state);
+        return state;
     }
 
-    // --- New Event Listener: Select All Checkbox ---
-    selectAllCheckbox.addEventListener('change', () => {
-        const isChecked = selectAllCheckbox.checked;
-        const allStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox');
-        allStoryCheckboxes.forEach(checkbox => {
-            checkbox.checked = isChecked;
+    // --- Apply a calculated state to the Select All checkbox ---
+    function applySelectAllState(state) {
+        // console.log('[applySelectAllState] Applying state:', state);
+        selectAllCheckbox.checked = state.checked;
+        selectAllCheckbox.indeterminate = state.indeterminate;
+        selectAllCheckbox.disabled = state.disabled;
+    }
+
+    // --- Original function now acts as a wrapper ---
+    function updateSelectAllCheckboxState() {
+        const state = calculateSelectAllState();
+        applySelectAllState(state);
+    }
+
+    // --- New Function: Get Selected Stories AND Tasks for Copy ---
+    function getSelectedItemsForCopy() {
+        const selectedItems = [];
+        const checkedStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox:checked');
+
+        checkedStoryCheckboxes.forEach(storyCb => {
+            const storyInfo = {
+                oid: storyCb.dataset.storyOid,
+                numericId: storyCb.dataset.numericId
+            };
+            
+            const selectedTaskIds = [];
+            const taskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyInfo.oid}"]`);
+            taskCheckboxes.forEach(taskCb => {
+                if (taskCb.dataset.taskId) { // Ensure task ID exists
+                    selectedTaskIds.push(taskCb.dataset.taskId);
+                }
+            });
+            
+            // Add story even if no tasks selected (story itself is selected)
+            selectedItems.push({
+                storyInfo: storyInfo,
+                selectedTaskIds: selectedTaskIds 
+            });
         });
-        // Update count and button state after toggling all
-        updateSelectedCount();
-        checkCopyButtonState();
-    });
+
+        return selectedItems;
+    }
 
     async function fetchStoriesAndTasks(timeboxId) {
         if (!timeboxId) {
@@ -878,27 +940,24 @@ document.addEventListener('DOMContentLoaded', () => {
         currentStories = []; // Clear stored stories before fetch
         populateStoryOwnerFilter(currentStories); // Clear owner filter
 
-        // Construct the query - Changed Team.Name to Owners.Name
-        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Description,Owners.Name&where=Timebox.ID='${timeboxId}'`;
+        // Update the query to explicitly include parallel task attributes
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Number,Task.ToDo,Task.Description,Owners.Name&where=Timebox.ID='${timeboxId}'`;
         const storyResponse = await v1ApiCall(storyQuery);
+
         if (!storyResponse || !storyResponse.Assets) {
             showStatus('No stories found or error fetching stories.', true);
             showLoading(false);
             return;
         }
 
-        if (storyResponse.Assets.length > 0) {
-            currentStories = storyResponse.Assets; // Store fetched stories
-            populateStoryOwnerFilter(currentStories); // Populate the owner filter dropdown
-            displayStories(currentStories); // Initial display (no filter active yet)
-            // Ensure the Select All checkbox is always enabled when stories are present
-            if (currentStories.length > 0) {
-                selectAllCheckbox.disabled = false;
-            }
-        } else { 
-            storiesListDiv.innerHTML = '<p>No active stories found in the selected timebox.</p>';
-            showStatus('No active stories found.');
-            checkCopyButtonState(); 
+        // Attach full task details (No longer needed with parallel arrays)
+        currentStories = storyResponse.Assets;
+
+        populateStoryOwnerFilter(currentStories);
+        displayStories(currentStories); // Pass stories with parallel arrays
+        // Ensure the Select All checkbox is always enabled when stories are present
+        if (currentStories.length > 0) {
+            selectAllCheckbox.disabled = false;
         }
     }
 
@@ -913,13 +972,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function checkCopyButtonState() {
-        const selectedStories = getSelectedStories();
+        // Only need selected stories and target timebox. Task selection refines the copy, doesn't prevent it.
+        const selectedStories = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox:checked');
         const targetTimeboxSelected = targetTimeboxChoices.getValue()?.value !== '';
         copyButton.disabled = !(selectedStories.length > 0 && targetTimeboxSelected);
     }
 
     async function copySelectedItems() {
-        const storiesToCopy = getSelectedStories();
+        const storiesToCopy = getSelectedItemsForCopy();
         const targetTimeboxId = targetTimeboxChoices.getValue()?.value;
         const targetParentId = targetParentChoices.getValue()?.value; // Might be "" if not selected
 
@@ -956,7 +1016,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let skippedCount = 0;
 
         for (let i = 0; i < storiesToCopy.length; i++) {
-            const storyInfo = storiesToCopy[i];
+            const itemToCopy = storiesToCopy[i]; // Renamed for clarity
+            const storyInfo = itemToCopy.storyInfo;
+            const selectedTaskIds = itemToCopy.selectedTaskIds;
+            
             const storyOid = storyInfo.oid;
             const storyNumericId = storyInfo.numericId;
             let originalStory = null; 
@@ -1088,76 +1151,86 @@ document.addEventListener('DOMContentLoaded', () => {
                 showStatus(`Created new story ${newStoryId}. Copying tasks...`);
                 // --- End Create New Story Copy ---
 
-                // --- STEP 4: Copy Tasks --- 
+                // --- STEP 4: Copy Tasks (Only Selected Ones) --- 
                 let taskSuccessCount = 0;
                 let taskErrorCount = 0;
+                let attemptedTaskCount = 0; // Track tasks we try to copy
                 
                 for (const sourceTask of originalTasks) {
-                    try {
-                         // Task payload building and API call logic remains the same
-                         const taskAttributes = sourceTask.Attributes;
-                         const newTaskPayload = {
-                             Attributes: {
-                                 Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
-                                 Parent: { value: newStoryId, act: 'set' },
-                                 ...(taskAttributes.Description?.value && { 
-                                     Description: { value: taskAttributes.Description.value, act: 'set' } 
-                                 }),
-                                 ...(taskAttributes.Category?.value?.idref && { 
-                                     Category: { value: taskAttributes.Category.value.idref, act: 'set' } 
-                                 }),
-                                 ...(taskAttributes.ToDo?.value !== undefined && taskAttributes.ToDo?.value !== null && {
-                                     ToDo: { 
-                                         value: typeof taskAttributes.ToDo.value === 'number' ? 
-                                                taskAttributes.ToDo.value : 
-                                                parseFloat(taskAttributes.ToDo.value), 
-                                         act: 'set' 
-                                     }
-                                 }),
-                                 ...(taskAttributes.TaggedWith?.value && taskAttributes.TaggedWith.value.length > 0 && {
-                                     TaggedWith: {
-                                         act: "set", 
-                                         value: taskAttributes.TaggedWith.value 
-                                     }
-                                 })
+                    const sourceTaskId = sourceTask.id; // e.g., Task:12345
+                    // Check if this task's ID is in the list of selected task IDs
+                    if (selectedTaskIds.includes(sourceTaskId)) {
+                        attemptedTaskCount++;
+                        try {
+                             // Task payload building and API call logic remains the same
+                             const taskAttributes = sourceTask.Attributes;
+                             const newTaskPayload = {
+                                 Attributes: {
+                                     Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
+                                     Parent: { value: newStoryId, act: 'set' },
+                                     ...(taskAttributes.Description?.value && { 
+                                         Description: { value: taskAttributes.Description.value, act: 'set' } 
+                                     }),
+                                     ...(taskAttributes.Category?.value?.idref && { 
+                                         Category: { value: taskAttributes.Category.value.idref, act: 'set' } 
+                                     }),
+                                     ...(taskAttributes.ToDo?.value !== undefined && taskAttributes.ToDo?.value !== null && { // Allow 0 ToDo
+                                        ToDo: { 
+                                            value: typeof taskAttributes.ToDo.value === 'number' ? taskAttributes.ToDo.value : (parseFloat(taskAttributes.ToDo.value) || 0), // Default to 0 if parsing fails
+                                            act: 'set' 
+                                        }
+                                    }),
+                                     ...(taskAttributes.TaggedWith?.value && taskAttributes.TaggedWith.value.length > 0 && {
+                                         TaggedWith: {
+                                             act: "set", 
+                                             value: taskAttributes.TaggedWith.value 
+                                         }
+                                     })
+                                 }
+                             };
+                             if (taskAttributes.Owners?.value && 
+                                 Array.isArray(taskAttributes.Owners.value) && 
+                                 taskAttributes.Owners.value.length > 0) {
+                                 const validOwners = taskAttributes.Owners.value
+                                     .filter(o => o && o.idref && typeof o.idref === 'string')
+                                     .map(o => o.idref);
+                                 if (validOwners.length > 0) {
+                                     newTaskPayload.Attributes.Owners = {
+                                         act: "add",
+                                         value: validOwners.length === 1 ? validOwners[0] : validOwners
+                                     };
+                                 }
                              }
-                         };
-                         if (taskAttributes.Owners?.value && 
-                             Array.isArray(taskAttributes.Owners.value) && 
-                             taskAttributes.Owners.value.length > 0) {
-                             const validOwners = taskAttributes.Owners.value
-                                 .filter(o => o && o.idref && typeof o.idref === 'string')
-                                 .map(o => o.idref);
-                             if (validOwners.length > 0) {
-                                 newTaskPayload.Attributes.Owners = {
-                                     act: "add",
-                                     value: validOwners.length === 1 ? validOwners[0] : validOwners
-                                 };
-                             }
-                         }
-                         
-                        const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
-                        if (createTaskResponse && createTaskResponse.id) {
-                            taskSuccessCount++;
-                        } else {
-                            console.error(`Failed to create task copy for new story ${newStoryId}. Original task ID: ${sourceTask.id}`);
+                             
+                            const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
+                            if (createTaskResponse && createTaskResponse.id) {
+                                taskSuccessCount++;
+                            } else {
+                                const taskErrorDetail = createTaskResponse?.message || 'Unknown task create error';
+                                console.error(`Failed to create task copy for new story ${newStoryId}. Original task ID: ${sourceTask.id}. Error: ${taskErrorDetail}`);
+                                taskErrorCount++;
+                            }
+                        } catch (error) {
+                            console.error(`Error creating task copy for new story ${newStoryId}:`, error);
                             taskErrorCount++;
                         }
-                    } catch (error) {
-                        console.error(`Error creating task copy for new story ${newStoryId}:`, error);
-                        taskErrorCount++;
+                    } else {
+                        // Task was not selected, skip it silently or log if needed
+                        // console.log(`Skipping unselected task ${sourceTaskId} for story ${currentStoryNumberLog}`);
                     }
                 }
                 // --- End Copy Tasks ---
 
                 // --- Mark overall copy success --- 
                 if (taskErrorCount > 0) {
-                    showStatus(`Copied story ${currentStoryNumberLog} with ${taskSuccessCount}/${originalTasks.length} tasks (${taskErrorCount} tasks failed).`, true);
-                } else {
-                    showStatus(`Successfully copied story ${currentStoryNumberLog} with all ${taskSuccessCount} tasks.`);
-                    copySuccessful = true; // Mark as fully successful only if all tasks copied
+                    showStatus(`Copied story ${currentStoryNumberLog} with ${taskSuccessCount}/${attemptedTaskCount} selected tasks (${taskErrorCount} tasks failed).`, true);
+                } else if (attemptedTaskCount > 0) {
+                    showStatus(`Successfully copied story ${currentStoryNumberLog} with all ${taskSuccessCount} selected tasks.`);
+                    copySuccessful = true; // Mark as fully successful only if all *attempted* tasks copied
+                } else { // No tasks were selected to be copied
+                    showStatus(`Successfully copied story ${currentStoryNumberLog} (no tasks selected for copy).`);
+                     copySuccessful = true; // Still consider story copy successful
                 }
-                successCount++; // Increment story success count even if some tasks failed
 
             } catch (error) {
                 // Catch any truly unexpected errors within the main loop for this story
@@ -1310,54 +1383,193 @@ document.addEventListener('DOMContentLoaded', () => {
         choicesInstance.setChoices(parentOptions, 'value', 'label', true); // Replace choices using Choices API
     }
 
-    // --- Event Listeners ---
-    loadStoriesButton.addEventListener('click', () => fetchStoriesAndTasks(sourceTimeboxChoices.getValue()?.value));
-    copyButton.addEventListener('click', copySelectedItems);
-    sourceTimeboxSelect.addEventListener('change', () => {
-        storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; // Clear stories when source changes
-        copyButton.disabled = true; // Disable copy button
-        currentStories = []; // Clear stories
-        populateStoryOwnerFilter(currentStories); // Clear owner filter
-    });
-    targetTimeboxSelect.addEventListener('change', checkCopyButtonState);
-    targetParentSelect.addEventListener('change', checkCopyButtonState);
+    // --- New Function: Update Task Checkboxes for a Given Story ---
+    function updateTaskStatesForStory(storyOid, isChecked) {
+        console.log(`[updateTaskStatesForStory] Called for ${storyOid}. Setting tasks to: ${isChecked}`);
+        const taskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyOid}"]`);
+        console.log(`[updateTaskStatesForStory] Found ${taskCheckboxes.length} tasks.`);
+        
+        taskCheckboxes.forEach((taskCb, index) => {
+            console.log(`[updateTaskStatesForStory] Task ${index + 1} (${taskCb.id}): Setting checked to ${isChecked}`);
+            taskCb.checked = isChecked;
+        });
 
-    // Add filter event listeners
-    sourceOwnerFilterSelect.addEventListener('change', () => {
-        // console.log('[change] Event Fired on sourceOwnerFilterSelect.');
-        populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
-        storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
-        copyButton.disabled = true;
-        updateSelectedCount();
+        // Update UI states after task states are set
+        console.log(`[updateTaskStatesForStory] Updating related UI states.`);
         updateSelectAllCheckboxState();
-    });
-    
-    targetOwnerFilterSelect.addEventListener('change', () => {
-        // console.log('[change] Event Fired on targetOwnerFilterSelect.');
-        populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
         checkCopyButtonState();
-    });
+        updateSelectedCount();
+    }
 
-    // Story owner filter event - Using standard 'change' listener with stopPropagation
-    storyOwnerFilterSelect.addEventListener('change', (event) => {
-        // console.log('[change] Event Fired on storyOwnerFilterSelect.');
-        event.stopPropagation(); // Prevent event from bubbling up
-        // console.log('[change] Event propagation stopped.');
+    // --- Start Event Listener Setup ---
+    function setupEventListeners() {
+        // Settings
+        saveSettingsButton.addEventListener('click', saveSettings);
+        authTokenRadio.addEventListener('change', toggleAuthInputs);
+        authBasicRadio.addEventListener('change', toggleAuthInputs);
+        authNtlmRadio.addEventListener('change', toggleAuthInputs);
+        setupPasswordToggles(); // This function already adds its own listeners
+        
+        // Main Actions
+        loadStoriesButton.addEventListener('click', () => {
+            const timeboxId = sourceTimeboxChoices.getValue()?.value;
+            fetchStoriesAndTasks(timeboxId);
+        });
+        copyButton.addEventListener('click', copySelectedItems);
 
-        if (!storyOwnerChoices) {
-            // console.error('[change] storyOwnerChoices instance is null!');
-            return;
-        }
-        // console.log('[change] Selected owners BEFORE displayStories:', storyOwnerChoices.getValue(true));
-        // console.log('[change] Calling displayStories...');
-        displayStories(currentStories);
-        // console.log('[change] Returned from displayStories.');
-        // console.log('[change] Selected owners AFTER displayStories:', storyOwnerChoices.getValue(true));
-        // console.log('[change] Calling updateSelectAllCheckboxState...');
-        updateSelectAllCheckboxState();
-        // console.log('[change] Returned from updateSelectAllCheckboxState.');
-        // console.log('[change] Selected owners AFTER updateSelectAll:', storyOwnerChoices.getValue(true));
-    });
+        // Filters & Dropdowns
+        sourceOwnerFilterSelect.addEventListener('change', () => {
+            // console.log('[change] Event Fired on sourceOwnerFilterSelect.');
+            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
+            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
+            copyButton.disabled = true;
+            updateSelectedCount();
+            updateSelectAllCheckboxState();
+        });
+        targetOwnerFilterSelect.addEventListener('change', () => {
+            // console.log('[change] Event Fired on targetOwnerFilterSelect.');
+            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
+            checkCopyButtonState();
+        });
+        sourceTimeboxSelect.addEventListener('change', () => {
+            storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; 
+            copyButton.disabled = true; 
+            currentStories = []; 
+            populateStoryOwnerFilter(currentStories); 
+            updateSelectedCount();
+            updateSelectAllCheckboxState();
+        });
+        targetTimeboxSelect.addEventListener('change', checkCopyButtonState);
+        targetParentSelect.addEventListener('change', checkCopyButtonState);
+        
+        // Story owner filter
+        storyOwnerFilterSelect.addEventListener('change', (event) => {
+            // console.log('[Owner Filter Change] Event Fired.');
+            event.stopPropagation(); 
+            if (!storyOwnerChoices) {
+                // console.log('[Owner Filter Change] storyOwnerChoices is null, returning.');
+                return;
+            }
+            // console.log('[Owner Filter Change] Selected values:', storyOwnerChoices.getValue(true));
+            // console.log('[Owner Filter Change] Calling displayStories...');
+            displayStories(currentStories);
+            // console.log('[Owner Filter Change] Updating count and Select All state after display.');
+            updateSelectedCount(); 
+            updateSelectAllCheckboxState(); 
+        });
+
+        // Story/Task List Interactions
+        selectAllCheckbox.addEventListener('change', () => {
+            const isChecked = selectAllCheckbox.checked;
+            // console.log(`[Select All Change] State is now: ${isChecked}`);
+
+            const allStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox');
+            const allTaskCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].task-checkbox');
+            
+            // console.log(`[Select All Change] Setting ${allStoryCheckboxes.length} stories and ${allTaskCheckboxes.length} tasks to ${isChecked}`);
+            allStoryCheckboxes.forEach(checkbox => { checkbox.checked = isChecked; });
+            allTaskCheckboxes.forEach(checkbox => { checkbox.checked = isChecked; });
+            
+            // Update other UI elements after changing children
+            updateSelectedCount();
+            checkCopyButtonState();
+        });
+
+        // Listener for changes within the stories list (delegated)
+        storiesListDiv.addEventListener('change', (event) => {
+            const target = event.target;
+            let stateNeedsUpdate = false; // Flag to check if UI update is needed
+
+            // Handle clicks on STORY checkboxes
+            if (target.matches('.story-checkbox')) {
+                const storyCheckbox = target;
+                const currentStoryCheckedState = storyCheckbox.checked;
+                const storyOid = storyCheckbox.dataset.storyOid;
+                // console.log('[Delegated Story Change] Fired for:', storyCheckbox.id, 'Checked:', currentStoryCheckedState);
+
+                // --- Task Cascading Logic ---
+                const taskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyOid}"]`);
+                // console.log(`[Delegated Story Change] Found ${taskCheckboxes.length} tasks for ${storyOid}. Setting state to: ${currentStoryCheckedState}`);
+                taskCheckboxes.forEach((taskCb, index) => {
+                    // Only update tasks if the story itself was changed by the user action,
+                    // not if it was changed programmatically by a task click below.
+                    // We rely on the fact that this specific event triggered on the story checkbox.
+                    taskCb.checked = currentStoryCheckedState;
+                });
+                stateNeedsUpdate = true;
+            }
+
+            // Handle clicks on TASK checkboxes
+            if (target.matches('.task-checkbox')) {
+                const taskCheckbox = target;
+                const currentTaskCheckedState = taskCheckbox.checked;
+                const storyOid = taskCheckbox.dataset.storyOid;
+                // console.log('[Delegated Task Change] Fired for:', taskCheckbox.id, 'Checked:', currentTaskCheckedState, 'Story OID:', storyOid);
+                
+                let parentStateChanged = false; // Track if we changed the parent
+
+                if (storyOid) { // Ensure we have a story OID
+                    const parentStoryCheckbox = document.getElementById(`story-${storyOid}`);
+                    if (parentStoryCheckbox) {
+                        // Case 1: Task CHECKED - ensure parent is checked
+                        if (currentTaskCheckedState && !parentStoryCheckbox.checked) {
+                            // console.log(`[Delegated Task Change] Task checked, ensuring parent story ${storyOid} is checked.`);
+                            parentStoryCheckbox.checked = true;
+                            parentStateChanged = true; 
+                        }
+                        // Case 2: Task UNCHECKED - check if it's the last one, then uncheck parent
+                        else if (!currentTaskCheckedState) {
+                            const siblingTaskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyOid}"]`);
+                            let anyOtherTaskChecked = false;
+                            siblingTaskCheckboxes.forEach(siblingCb => {
+                                // Check siblings *other than the one that triggered the event*
+                                if (siblingCb !== taskCheckbox && siblingCb.checked) {
+                                    anyOtherTaskChecked = true;
+                                }
+                            });
+
+                            // If no other tasks for this story are checked, uncheck the parent
+                            if (!anyOtherTaskChecked && parentStoryCheckbox.checked) {
+                                 // console.log(`[Delegated Task Change] Task unchecked, was the last task, unchecking parent story ${storyOid}.`);
+                                parentStoryCheckbox.checked = false;
+                                 parentStateChanged = true; 
+                            }
+                        }
+                    }
+                }
+                // We always need to update state if a task changed, even if parent didn't
+                stateNeedsUpdate = true; 
+                 // If parent state changed programmatically, recalculate select all etc.
+                 // The main stateNeedsUpdate flag handles deferring the update call below.
+            }
+
+            // If any relevant checkbox changed (story, task, or parent programmatically), defer the UI updates
+            if (stateNeedsUpdate) {
+                 // console.log('[Delegated Change] State needs update, scheduling deferred UI update.');
+                // Always calculate the fresh state *before* the timeout
+                const calculatedState = calculateSelectAllState(); 
+                setTimeout(() => {
+                    // console.log('[Delegated Change] Running deferred UI updates.');
+                    applySelectAllState(calculatedState); // Apply potentially new Select All state
+                    checkCopyButtonState();
+                    updateSelectedCount();
+                }, 0);
+            }
+        });
+    }
+    // --- End Event Listener Setup ---
+
+    // --- Initial Load and Setup ---
+    function initializeApp() {
+        // Initialize UI components
+        initChoices(); 
+        setupEventListeners(); // Centralized listener setup
+        loadSettings(); 
+        updateSelectedCount(); // Initialize count
+    }
+
+    // Start the app
+    initializeApp();
 
     // Add this new function to handle parallel loading with timeout
     async function loadInitialData() {
@@ -1384,95 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Function to update the selected count badge ---
     function updateSelectedCount() {
-        const selectedStories = getSelectedStories();
-        selectedCountBadge.textContent = selectedStories.length;
-        
-        // Add animation for the counter
-        selectedCountBadge.classList.add('badge-pulse');
-        setTimeout(() => {
-            selectedCountBadge.classList.remove('badge-pulse');
-        }, 500);
+        const selectedCount = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox:checked').length;
+        selectedCountBadge.textContent = selectedCount.toString();
     }
-
-    // --- Initial Load and Setup ---
-    function initializeApp() {
-        // Initialize UI components
-        initChoices();
-        setupPasswordToggles();
-        loadSettings();
-        
-        // --- Restore essential event listeners here ---
-        // Source filter events (Owner) - Using 'change' instead of 'choice'
-        sourceOwnerFilterSelect.addEventListener('change', () => {
-            // console.log('[change] Event Fired on sourceOwnerFilterSelect.');
-            populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
-            storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
-            copyButton.disabled = true;
-            updateSelectedCount();
-            updateSelectAllCheckboxState();
-        });
-
-        // Target filter events (Owner) - Using 'change' instead of 'choice'
-        targetOwnerFilterSelect.addEventListener('change', () => {
-            // console.log('[change] Event Fired on targetOwnerFilterSelect.');
-            populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
-            checkCopyButtonState();
-        });
-
-        // Main dropdown events
-        sourceTimeboxSelect.addEventListener('change', () => { // Use 'change' for consistency or if 'choice' isn't firing reliably after load
-            storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; 
-            copyButton.disabled = true; 
-            currentStories = []; 
-            populateStoryOwnerFilter(currentStories); 
-            updateSelectedCount(); // Reset count when source changes
-            updateSelectAllCheckboxState(); // Reset select all state
-        });
-        
-        targetTimeboxSelect.addEventListener('change', checkCopyButtonState); // Use 'change'
-        targetParentSelect.addEventListener('change', checkCopyButtonState); // Use 'change'
-        
-        // Story owner filter event - Using standard 'change' listener with stopPropagation
-        storyOwnerFilterSelect.addEventListener('change', (event) => {
-            // console.log('[change] Event Fired on storyOwnerFilterSelect.');
-            event.stopPropagation(); // Prevent event from bubbling up
-            // console.log('[change] Event propagation stopped.');
-
-            if (!storyOwnerChoices) {
-                // console.error('[change] storyOwnerChoices instance is null!');
-                return;
-            }
-            // console.log('[change] Selected owners BEFORE displayStories:', storyOwnerChoices.getValue(true));
-            // console.log('[change] Calling displayStories...');
-            displayStories(currentStories);
-            // console.log('[change] Returned from displayStories.');
-            // console.log('[change] Selected owners AFTER displayStories:', storyOwnerChoices.getValue(true));
-            // console.log('[change] Calling updateSelectAllCheckboxState...');
-            updateSelectAllCheckboxState();
-            // console.log('[change] Returned from updateSelectAllCheckboxState.');
-            // console.log('[change] Selected owners AFTER updateSelectAll:', storyOwnerChoices.getValue(true));
-        });
-
-        // --- End restored listeners ---
-
-        // Setup main button event listeners
-        loadStoriesButton.addEventListener('click', () => {
-            const timeboxId = sourceTimeboxChoices.getValue()?.value;
-            fetchStoriesAndTasks(timeboxId);
-        });
-        
-        copyButton.addEventListener('click', copySelectedItems);
-        saveSettingsButton.addEventListener('click', saveSettings);
-        
-        // Setup auth method radio buttons
-        authTokenRadio.addEventListener('change', toggleAuthInputs);
-        authBasicRadio.addEventListener('change', toggleAuthInputs);
-        authNtlmRadio.addEventListener('change', toggleAuthInputs);
-        
-        // Initialize the selected count
-        updateSelectedCount();
-    }
-
-    // Start the app
-    initializeApp();
 });
