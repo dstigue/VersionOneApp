@@ -482,14 +482,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function filterTimeboxes(choicesInstance, ownerFilter) {
         choicesInstance.clearStore();
         
-        // --- Debug Log 1: Function entry and instance check ---
-        // console.log('filterTimeboxes called for:', choicesInstance?.passedElement?.element?.id, 'with filters:', { ownerFilter });
-        if (!choicesInstance) {
-            console.error('filterTimeboxes: choicesInstance is null!'); // Keep error
-            return;
-        }
-        // --- End Debug Log 1 ---
-        
         if (!allTimeboxes || !allTimeboxes.Assets) {
             console.warn('filterTimeboxes: allTimeboxes is not populated');
             return;
@@ -503,11 +495,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return ownerMatch;
         });
-
-        // --- Debug Log 2: Filtered results ---
-        // console.log('filterTimeboxes: Filtered timeboxes count:', filteredTimeboxes.length);
-        // console.log('filterTimeboxes: Filtered timeboxes data:', JSON.stringify(filteredTimeboxes)); // Uncomment for detailed data
-        // --- End Debug Log 2 ---
 
         // Helper function to format date string
         const formatDate = (dateString) => {
@@ -539,10 +526,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             });
 
-        // --- Debug Log 3: Formatted options ---
-        // console.log('filterTimeboxes: Formatted options for Choices.js:', timeboxOptions);
-        // --- End Debug Log 3 ---
-
         // Add placeholder option
         const placeholderOption = {
             value: '',
@@ -550,10 +533,6 @@ document.addEventListener('DOMContentLoaded', () => {
             placeholder: true
         };
         
-        // Set choices with placeholder first
-        // --- Debug Log 4: Before setChoices ---
-        // console.log(`filterTimeboxes: Calling setChoices on ${choicesInstance?.passedElement?.element?.id} with`, [placeholderOption].concat(timeboxOptions));
-        // --- End Debug Log 4 ---
         choicesInstance.setChoices([placeholderOption].concat(timeboxOptions), 'value', 'label', true);
         
         // Handle no results
@@ -562,9 +541,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 placeholderOption,
                 { value: 'no-match', label: '-- No matching timeboxes --', disabled: true }
             ], 'value', 'label', true);
-             // --- Debug Log 5: No results ---
-            // console.log(`filterTimeboxes: Set 'no matching timeboxes' for ${choicesInstance?.passedElement?.element?.id}`);
-            // --- End Debug Log 5 ---
         }
     }
 
@@ -633,12 +609,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Changed: Function to Populate Story Owner Filter (Choices.js version) ---
     function populateStoryOwnerFilter(stories) {
-        // console.log("populateStoryOwnerFilter called with", stories?.length, "stories."); // Log 1
         const owners = new Set();
         if (stories && stories.length > 0) {
             stories.forEach((story, index) => {
                 const storyOwners = story.Attributes['Owners.Name']?.value;
-                // console.log(`Story ${index} Owners raw:`, storyOwners); // Uncomment for very detailed logging
                 if (storyOwners) {
                     if (Array.isArray(storyOwners)) {
                         storyOwners.forEach(owner => { if (owner) owners.add(owner); });
@@ -651,23 +625,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        // console.log("Found unique owners:", Array.from(owners)); // Log 3
-        
         // Format choices options for Choices.js
         const ownerChoicesOptions = Array.from(owners).sort().map(owner => ({
             value: owner,
             label: owner
         }));
         
-        // console.log("Formatted owner choices for dropdown:", ownerChoicesOptions); // Log 4
-        
         // Set choices using the Choices.js API
         if (storyOwnerChoices) {
-            // console.log("storyOwnerChoices instance found. Clearing store and updating choices."); // Log 5
-            storyOwnerChoices.clearStore(); // Use clearStore for a more thorough reset
-            storyOwnerChoices.setChoices(ownerChoicesOptions, 'value', 'label', true); // Pass 'value', 'label', and true (replace choices)
+            storyOwnerChoices.clearStore();
+            storyOwnerChoices.setChoices(ownerChoicesOptions, 'value', 'label', true);
         } else {
-            console.error("populateStoryOwnerFilter: storyOwnerChoices instance is null!"); // Log 5 (error case)
+            console.error("populateStoryOwnerFilter: storyOwnerChoices instance is null!");
         }
     }
 
@@ -754,26 +723,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const taskNumbers = story.Attributes['Children:Task.Number']?.value;
             const taskToDos = story.Attributes['Children:Task.ToDo']?.value; // Get ToDo array
 
-            // --- DEBUG LOG: Check Arrays ---
-            console.log(`[DEBUG] Story ${story.id} (${story.Attributes.Number?.value || 'No Number'}): Checking task arrays.`);
-            console.log(`  tasks exists: ${!!tasks}, length: ${tasks?.length}`);
-            console.log(`  taskNames exists: ${!!taskNames}, length: ${taskNames?.length}`);
-            console.log(`  taskNumbers exists: ${!!taskNumbers}, length: ${taskNumbers?.length}`);
-            console.log(`  taskToDos exists: ${!!taskToDos}, length: ${taskToDos?.length}`);
-            // --- END DEBUG LOG ---
-
             // --- Relaxed IF Condition ---
-            // Only require the main 'tasks' array to exist and have items.
             if (tasks && tasks.length > 0) {
-
-                // Optional: Add warnings if essential parallel arrays are missing/mismatched, but proceed cautiously.
-                if (!taskNames || tasks.length !== taskNames.length) {
-                     console.warn(`[WARN] Story ${story.id}: Missing or mismatched length for taskNames. Task display might be incomplete.`);
-                }
-                if (!taskNumbers || tasks.length !== taskNumbers.length) {
-                     console.warn(`[WARN] Story ${story.id}: Missing or mismatched length for taskNumbers. Task display might be incomplete.`);
-                }
-                // We won't strictly require taskToDos array to exist or match length here.
 
                 const taskUl = document.createElement('ul');
                 taskUl.className = 'task-list mt-2';
@@ -873,13 +824,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Some checked (indeterminate state)
             state = { checked: false, indeterminate: true, disabled: false };
         }
-        // console.log('[calculateSelectAllState] Calculated state:', state);
         return state;
     }
 
     // --- Apply a calculated state to the Select All checkbox ---
     function applySelectAllState(state) {
-        // console.log('[applySelectAllState] Applying state:', state);
         selectAllCheckbox.checked = state.checked;
         selectAllCheckbox.indeterminate = state.indeterminate;
         selectAllCheckbox.disabled = state.disabled;
@@ -901,19 +850,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 oid: storyCb.dataset.storyOid,
                 numericId: storyCb.dataset.numericId
             };
-            
+
             const selectedTaskIds = [];
-            const taskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyInfo.oid}"]`);
-            taskCheckboxes.forEach(taskCb => {
-                if (taskCb.dataset.taskId) { // Ensure task ID exists
-                    selectedTaskIds.push(taskCb.dataset.taskId);
+            const allTaskCheckboxesForStory = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyInfo.oid}"]`);
+
+            allTaskCheckboxesForStory.forEach((taskCb, index) => {
+                const taskId = taskCb.dataset.taskId;
+                const isChecked = taskCb.checked;
+
+                if (isChecked) {
+                    if (taskId) {
+                        selectedTaskIds.push(taskId);
+                    } else {
+                        console.warn(`Story ${storyInfo.oid}: Found checked task checkbox without a dataset.taskId.`);
+                    }
                 }
             });
-            
-            // Add story even if no tasks selected (story itself is selected)
+
             selectedItems.push({
                 storyInfo: storyInfo,
-                selectedTaskIds: selectedTaskIds 
+                selectedTaskIds: selectedTaskIds
             });
         });
 
@@ -1158,8 +1114,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 for (const sourceTask of originalTasks) {
                     const sourceTaskId = sourceTask.id; // e.g., Task:12345
-                    // Check if this task's ID is in the list of selected task IDs
-                    if (selectedTaskIds.includes(sourceTaskId)) {
+
+                    const isSelected = selectedTaskIds.includes(sourceTaskId);
+
+                    if (isSelected) {
                         attemptedTaskCount++;
                         try {
                              // Task payload building and API call logic remains the same
@@ -1214,9 +1172,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             console.error(`Error creating task copy for new story ${newStoryId}:`, error);
                             taskErrorCount++;
                         }
-                    } else {
-                        // Task was not selected, skip it silently or log if needed
-                        // console.log(`Skipping unselected task ${sourceTaskId} for story ${currentStoryNumberLog}`);
                     }
                 }
                 // --- End Copy Tasks ---
@@ -1419,7 +1374,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Filters & Dropdowns
         sourceOwnerFilterSelect.addEventListener('change', () => {
-            // console.log('[change] Event Fired on sourceOwnerFilterSelect.');
             populateTimeboxSelect(sourceTimeboxChoices, allTimeboxes);
             storiesListDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>Select a timebox and click "Load Stories".</div>';
             copyButton.disabled = true;
@@ -1427,7 +1381,6 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSelectAllCheckboxState();
         });
         targetOwnerFilterSelect.addEventListener('change', () => {
-            // console.log('[change] Event Fired on targetOwnerFilterSelect.');
             populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
             checkCopyButtonState();
         });
@@ -1444,16 +1397,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Story owner filter
         storyOwnerFilterSelect.addEventListener('change', (event) => {
-            // console.log('[Owner Filter Change] Event Fired.');
             event.stopPropagation(); 
             if (!storyOwnerChoices) {
-                // console.log('[Owner Filter Change] storyOwnerChoices is null, returning.');
                 return;
             }
-            // console.log('[Owner Filter Change] Selected values:', storyOwnerChoices.getValue(true));
-            // console.log('[Owner Filter Change] Calling displayStories...');
             displayStories(currentStories);
-            // console.log('[Owner Filter Change] Updating count and Select All state after display.');
             updateSelectedCount(); 
             updateSelectAllCheckboxState(); 
         });
@@ -1461,16 +1409,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Story/Task List Interactions
         selectAllCheckbox.addEventListener('change', () => {
             const isChecked = selectAllCheckbox.checked;
-            // console.log(`[Select All Change] State is now: ${isChecked}`);
 
             const allStoryCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].story-checkbox');
             const allTaskCheckboxes = storiesListDiv.querySelectorAll('input[type="checkbox"].task-checkbox');
             
-            // console.log(`[Select All Change] Setting ${allStoryCheckboxes.length} stories and ${allTaskCheckboxes.length} tasks to ${isChecked}`);
             allStoryCheckboxes.forEach(checkbox => { checkbox.checked = isChecked; });
             allTaskCheckboxes.forEach(checkbox => { checkbox.checked = isChecked; });
             
-            // Update other UI elements after changing children
             updateSelectedCount();
             checkCopyButtonState();
         });
@@ -1478,79 +1423,57 @@ document.addEventListener('DOMContentLoaded', () => {
         // Listener for changes within the stories list (delegated)
         storiesListDiv.addEventListener('change', (event) => {
             const target = event.target;
-            let stateNeedsUpdate = false; // Flag to check if UI update is needed
+            let stateNeedsUpdate = false;
 
-            // Handle clicks on STORY checkboxes
             if (target.matches('.story-checkbox')) {
                 const storyCheckbox = target;
                 const currentStoryCheckedState = storyCheckbox.checked;
                 const storyOid = storyCheckbox.dataset.storyOid;
-                // console.log('[Delegated Story Change] Fired for:', storyCheckbox.id, 'Checked:', currentStoryCheckedState);
 
-                // --- Task Cascading Logic ---
                 const taskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyOid}"]`);
-                // console.log(`[Delegated Story Change] Found ${taskCheckboxes.length} tasks for ${storyOid}. Setting state to: ${currentStoryCheckedState}`);
                 taskCheckboxes.forEach((taskCb, index) => {
-                    // Only update tasks if the story itself was changed by the user action,
-                    // not if it was changed programmatically by a task click below.
-                    // We rely on the fact that this specific event triggered on the story checkbox.
                     taskCb.checked = currentStoryCheckedState;
                 });
                 stateNeedsUpdate = true;
             }
 
-            // Handle clicks on TASK checkboxes
             if (target.matches('.task-checkbox')) {
                 const taskCheckbox = target;
                 const currentTaskCheckedState = taskCheckbox.checked;
                 const storyOid = taskCheckbox.dataset.storyOid;
-                // console.log('[Delegated Task Change] Fired for:', taskCheckbox.id, 'Checked:', currentTaskCheckedState, 'Story OID:', storyOid);
                 
-                let parentStateChanged = false; // Track if we changed the parent
+                let parentStateChanged = false;
 
-                if (storyOid) { // Ensure we have a story OID
+                if (storyOid) {
                     const parentStoryCheckbox = document.getElementById(`story-${storyOid}`);
                     if (parentStoryCheckbox) {
-                        // Case 1: Task CHECKED - ensure parent is checked
                         if (currentTaskCheckedState && !parentStoryCheckbox.checked) {
-                            // console.log(`[Delegated Task Change] Task checked, ensuring parent story ${storyOid} is checked.`);
                             parentStoryCheckbox.checked = true;
                             parentStateChanged = true; 
                         }
-                        // Case 2: Task UNCHECKED - check if it's the last one, then uncheck parent
                         else if (!currentTaskCheckedState) {
                             const siblingTaskCheckboxes = storiesListDiv.querySelectorAll(`.task-checkbox[data-story-oid="${storyOid}"]`);
                             let anyOtherTaskChecked = false;
                             siblingTaskCheckboxes.forEach(siblingCb => {
-                                // Check siblings *other than the one that triggered the event*
                                 if (siblingCb !== taskCheckbox && siblingCb.checked) {
                                     anyOtherTaskChecked = true;
                                 }
                             });
 
-                            // If no other tasks for this story are checked, uncheck the parent
                             if (!anyOtherTaskChecked && parentStoryCheckbox.checked) {
-                                 // console.log(`[Delegated Task Change] Task unchecked, was the last task, unchecking parent story ${storyOid}.`);
                                 parentStoryCheckbox.checked = false;
-                                 parentStateChanged = true; 
+                                parentStateChanged = true; 
                             }
                         }
                     }
                 }
-                // We always need to update state if a task changed, even if parent didn't
                 stateNeedsUpdate = true; 
-                 // If parent state changed programmatically, recalculate select all etc.
-                 // The main stateNeedsUpdate flag handles deferring the update call below.
             }
 
-            // If any relevant checkbox changed (story, task, or parent programmatically), defer the UI updates
             if (stateNeedsUpdate) {
-                 // console.log('[Delegated Change] State needs update, scheduling deferred UI update.');
-                // Always calculate the fresh state *before* the timeout
-                const calculatedState = calculateSelectAllState(); 
+                const calculatedState = calculateSelectAllState();
                 setTimeout(() => {
-                    // console.log('[Delegated Change] Running deferred UI updates.');
-                    applySelectAllState(calculatedState); // Apply potentially new Select All state
+                    applySelectAllState(calculatedState);
                     checkCopyButtonState();
                     updateSelectedCount();
                 }, 0);
