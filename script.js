@@ -969,298 +969,246 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyInfo = storiesToCopy[i];
             const storyOid = storyInfo.oid;
             const storyNumericId = storyInfo.numericId;
-            let originalStory = null; // Initialize originalStory data
+            let originalStory = null; 
             let sourceAttributes = null;
-            const originalStoryNumberForLog = storyOid; // Use OID for initial logs
+            let originalTasks = []; // Store fetched tasks here
+            let newStoryId = null; // Store the ID of the newly created story
+            let copySuccessful = false; // Flag to track success for closing
+            const originalStoryNumberForLog = storyOid;
             
             try {
                 showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
 
-                // --- Fetch Original Story with Fallback for Custom_AcceptanceCriteria ---
+                // --- STEP 1: Fetch Original Story Details ---
                 const baseSel = 'Name,Number,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,AssetState,TaggedWith';
                 const optionalField = 'Custom_AcceptanceCriteria';
-                const fullSel = `${baseSel},${optionalField}`; // Try with optional field first
+                const fullSel = `${baseSel},${optionalField}`; 
                 let fetchErrorOccurred = false;
-                let storyResponse = null; // Initialize storyResponse
+                let storyResponse = null; 
 
                 console.log(`Attempting to fetch story ${storyNumericId} with sel: ${fullSel}`);
                 storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${fullSel}`);
                 
-                // --- MODIFIED FALLBACK LOGIC --- 
-                // If the first attempt returned ANY error, retry without the optional field
                 if (storyResponse?.error) { 
                     console.warn(`Fetching story ${storyNumericId} with full selection failed (Error: ${storyResponse.message || 'Unknown'}). Retrying without optional field '${optionalField}'.`);
                     showStatus(`Retrying fetch for story ${storyOid} without optional field...`);
                     storyResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?sel=${baseSel}`);
                 }
-                // --- END MODIFIED FALLBACK LOGIC ---
                 
-                // Check the final response (either from first or second attempt)
                 if (!storyResponse || storyResponse.error) {
                     fetchErrorOccurred = true;
                     const errorDetail = storyResponse?.message || 'Unknown fetch error';
                     console.error(`Failed to fetch details for story ${storyOid}. Error: ${errorDetail}`);
-                    showStatus(`Error fetching details for story ${storyOid}: ${errorDetail}`, true);
-                    // errorCount++; // Increment error count later if we cannot proceed
-                    // continue; // Don't continue yet, try closing first
+                    showStatus(`Error fetching details for story ${storyOid}: ${errorDetail}. Skipping copy.`, true);
+                    errorCount++;
+                    continue; // Skip to the next story if fetch fails
                 } else {
-                    originalStory = storyResponse; // Assign successful response
+                    originalStory = storyResponse; 
                     sourceAttributes = originalStory.Attributes;
                     console.log(`Successfully fetched details for story ${storyOid}`);
                 }
-                // --- End Fetch Original Story ---
-                
                 // Use fetched Number for subsequent logs if available
                 const currentStoryNumberLog = sourceAttributes?.Number?.value || originalStoryNumberForLog;
+                // --- End Fetch Original Story ---
 
-                // --- Close Original Story If Not Already Closed --- 
-                // Proceed even if fetch failed, maybe closing works?
-                const closedStateId = 128; 
-                const closeOperationName = 'QuickClose';
-                let isAlreadyClosed = sourceAttributes?.AssetState?.value === closedStateId;
-
-                if (!isAlreadyClosed) {
-                    showStatus(`Attempting to close original story ${currentStoryNumberLog} via operation '${closeOperationName}'...`);
-                    try {
-                        const closeResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?op=${closeOperationName}`, 'POST', null); 
-                        
-                        // Check for errors returned by v1ApiCall
-                        if (closeResponse?.error) {
-                             console.error(`Operation '${closeOperationName}' failed for story ${currentStoryNumberLog}. Error: ${closeResponse.message}`);
-                             showStatus(`Warning: Operation '${closeOperationName}' failed for story ${currentStoryNumberLog}. Copy will proceed if possible.`, true);
-                        } else {
-                            showStatus(`Original story ${currentStoryNumberLog} closed via operation. Proceeding with copy...`);
-                            // Optimistically update local state if closing succeeded
-                            if (sourceAttributes?.AssetState) {
-                                sourceAttributes.AssetState.value = closedStateId;
-                            }
-                            isAlreadyClosed = true; // Mark as closed now
-                        }
-                    } catch (closeError) {
-                        // Catch unexpected errors during the close call itself
-                        console.error(`Unexpected error executing operation '${closeOperationName}' on story ${currentStoryNumberLog}:`, closeError);
-                        showStatus(`Warning: Error closing original story ${currentStoryNumberLog} via operation. Copying anyway...`, true);
+                // --- STEP 2: Fetch Original Tasks --- 
+                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID,TaggedWith';
+                try {
+                    showStatus(`Fetching tasks for original story ${currentStoryNumberLog}...`);
+                    const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
+                    
+                    if (tasksResponse && !tasksResponse.error && tasksResponse.Assets) {
+                        originalTasks = tasksResponse.Assets;
+                        showStatus(`Found ${originalTasks.length} tasks for ${currentStoryNumberLog}. Proceeding with copy...`);
+                    } else if (tasksResponse?.error) {
+                        showStatus(`Warning: Could not fetch tasks for story ${currentStoryNumberLog} due to error: ${tasksResponse.message}. Story will be copied without tasks.`, true);
+                    } else {
+                        showStatus(`No tasks found for ${currentStoryNumberLog}. Continuing...`);
                     }
-                } else {
-                     showStatus(`Original story ${currentStoryNumberLog} already closed. Proceeding with copy...`);
+                } catch (error) {
+                    console.error(`Unexpected error fetching tasks for story ${currentStoryNumberLog}:`, error);
+                    showStatus(`Warning: Could not fetch tasks for story ${currentStoryNumberLog}. Story will be copied without tasks.`, true);
                 }
-                // --- End Close Original Story ---
-
-                // --- If fetching failed initially, we cannot proceed with copy ---
-                if (fetchErrorOccurred || !originalStory || !sourceAttributes) {
-                    console.error(`Cannot copy story ${storyOid} due to earlier fetch failure.`);
-                    showStatus(`Skipping copy for story ${storyOid} due to fetch error.`, true);
-                    errorCount++;
-                    continue; // Skip to the next story
-                }
-                // --- End Fetch Failure Check ---
-
+                // --- End Fetch Original Tasks ---
+                
+                // --- STEP 3: Create New Story Copy --- 
                 // --- Determine Super ID to use --- 
                 let superIdToUse = null;
                 let skipSuperAttribute = false;
                 
                 if (targetParentId) {
-                    // User selected a target parent
                     superIdToUse = targetParentId;
                 } else {
-                    // No target parent selected, try using the source story's parent
                     if (sourceAttributes.Super && sourceAttributes.Super.value && sourceAttributes.Super.value.idref) {
                         superIdToUse = sourceAttributes.Super.value.idref;
                     } else {
-                        // Parent is completely optional now, so we'll skip setting it
                         skipSuperAttribute = true;
                     }
                 }
                 // --- End Determine Super ID ---
 
-                // 2. Prepare data for the new story
-                const newStoryPayload = {
-                    Attributes: {
-                        // Required fields
-                        Name: { value: sourceAttributes.Name?.value || 'Unnamed Story', act: 'set' },
-                        Timebox: { value: targetTimeboxId, act: 'set' },
-                        // Include Super only if not skipping
-                        ...(!skipSuperAttribute && { Super: { value: superIdToUse, act: 'set' } }),
-
-                        // Use target timebox scope or original scope
-                        ...(targetTimeboxScope ? 
-                            { Scope: { value: targetTimeboxScope, act: 'set' } } : 
-                            (sourceAttributes.Scope && sourceAttributes.Scope.value && 
-                             { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } })
-                        ),
-                        
-                        // --- Conditionally add Acceptance Criteria --- 
-                        ...(sourceAttributes[optionalField] && sourceAttributes[optionalField].value !== null && { 
-                            [optionalField]: { value: sourceAttributes[optionalField].value, act: 'set' } 
-                        }),
-                        // --- Other attributes ---
-                        ...(sourceAttributes.Description && { Description: { value: sourceAttributes.Description.value, act: 'set' } }),
-                        ...(sourceAttributes.Priority && sourceAttributes.Priority.value && { Priority: { value: sourceAttributes.Priority.value.idref, act: 'set' } }),
-                        ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
-                        ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
-                        ...(sourceAttributes.TaggedWith && sourceAttributes.TaggedWith.value && sourceAttributes.TaggedWith.value.length > 0 && { TaggedWith: { value: sourceAttributes.TaggedWith.value, act: 'set' } }),
-                        // --- End Added Fields ---
-                        
-                        // Add back multi-value relations with strict checks
-                        ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
-                            AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
-                        }),
-                        
-                        // --- Restore Owners (handle single vs multiple) --- 
-                        ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && (() => {
-                            const validOwnerIdRefs = sourceAttributes.Owners.value
-                                .filter(o => o && o.idref) // Basic check for owner object and idref
-                                .map(o => o.idref);
-                                
-                            if (validOwnerIdRefs.length > 0) {
-                                // Use 'add' but provide a single string if only one owner, or array if multiple
-                                return { Owners: { act: 'add', value: validOwnerIdRefs.length === 1 ? validOwnerIdRefs[0] : validOwnerIdRefs } };
-                            } else {
-                                return {}; // Return empty object if no valid owners found after filtering
-                            }
-                        })()),
-                    }
-                };
-                
-                // Remove Super attribute entirely if skipSuperAttribute is true
+                const newStoryPayload = { /* ... (payload building logic remains the same) ... */ };
+                 // Payload building logic - Copied from previous state for completeness
+                 newStoryPayload.Attributes = {
+                     Name: { value: sourceAttributes.Name?.value || 'Unnamed Story', act: 'set' },
+                     Timebox: { value: targetTimeboxId, act: 'set' },
+                     ...(!skipSuperAttribute && { Super: { value: superIdToUse, act: 'set' } }),
+                     ...(targetTimeboxScope ? 
+                         { Scope: { value: targetTimeboxScope, act: 'set' } } : 
+                         (sourceAttributes.Scope && sourceAttributes.Scope.value && 
+                          { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } })
+                     ),
+                     ...(sourceAttributes[optionalField] && sourceAttributes[optionalField].value !== null && { 
+                         [optionalField]: { value: sourceAttributes[optionalField].value, act: 'set' } 
+                     }),
+                     ...(sourceAttributes.Description && { Description: { value: sourceAttributes.Description.value, act: 'set' } }),
+                     ...(sourceAttributes.Priority && sourceAttributes.Priority.value && { Priority: { value: sourceAttributes.Priority.value.idref, act: 'set' } }),
+                     ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
+                     ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
+                     ...(sourceAttributes.TaggedWith && sourceAttributes.TaggedWith.value && sourceAttributes.TaggedWith.value.length > 0 && { TaggedWith: { value: sourceAttributes.TaggedWith.value, act: 'set' } }),
+                     ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
+                         AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
+                     }),
+                     ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && (() => {
+                         const validOwnerIdRefs = sourceAttributes.Owners.value
+                             .filter(o => o && o.idref) 
+                             .map(o => o.idref);
+                         if (validOwnerIdRefs.length > 0) {
+                             return { Owners: { act: 'add', value: validOwnerIdRefs.length === 1 ? validOwnerIdRefs[0] : validOwnerIdRefs } };
+                         } else {
+                             return {};
+                         }
+                     })()),
+                 };
                 if (skipSuperAttribute) {
                     delete newStoryPayload.Attributes.Super;
                 }
 
-                // 3. Create the new story
+                showStatus(`Creating copy for story ${currentStoryNumberLog}...`);
                 const createStoryResponse = await v1ApiCall('rest-1.v1/Data/Story', 'POST', newStoryPayload);
                 
-                // Check for errors returned by v1ApiCall
                 if (!createStoryResponse || createStoryResponse.error) {
                     const errorDetail = createStoryResponse?.message || 'Unknown create error';
-                    console.error(`Failed to create copy for story ${storyOid}. Error: ${errorDetail}`);
-                    showStatus(`Error creating copy for ${storyOid}: ${errorDetail}`, true);
+                    console.error(`Failed to create copy for story ${currentStoryNumberLog}. Error: ${errorDetail}`);
+                    showStatus(`Error creating copy for ${currentStoryNumberLog}: ${errorDetail}. Skipping associated tasks and closure.`, true);
                     errorCount++;
-                    continue; // Skip to next story
+                    continue; // Skip to next story if copy fails
                 }
-                const newStoryId = createStoryResponse.id;
-                showStatus(`Created new story ${newStoryId}. Fetching original tasks...`);
+                newStoryId = createStoryResponse.id;
+                showStatus(`Created new story ${newStoryId}. Copying tasks...`);
+                // --- End Create New Story Copy ---
 
-                // 4. Fetch original tasks separately
-                let originalTasks = [];
-                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID,TaggedWith';
-                try {
-                    const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent=\'${storyOid}\'`);
-                    
-                    if (tasksResponse && !tasksResponse.error && tasksResponse.Assets) {
-                        originalTasks = tasksResponse.Assets;
-                        showStatus(`Found ${originalTasks.length} tasks for ${storyOid}. Copying...`);
-                    } else if (tasksResponse?.error) {
-                        showStatus(`Warning: Could not fetch tasks for story ${storyOid} due to error: ${tasksResponse.message}. Story copied without tasks.`, true);
-                    } else {
-                        showStatus(`No tasks found for ${storyOid}. Continuing...`);
-                    }
-                } catch (error) {
-                    console.error(`Unexpected error fetching tasks for story ${storyOid}:`, error);
-                    showStatus(`Warning: Could not fetch tasks for story ${storyOid}. Story was copied without tasks.`, true);
-                }
-                
-                // 5. Copy Tasks for the new story
+                // --- STEP 4: Copy Tasks --- 
                 let taskSuccessCount = 0;
                 let taskErrorCount = 0;
                 
                 for (const sourceTask of originalTasks) {
                     try {
-                        const taskAttributes = sourceTask.Attributes;
-                        const originalTaskId = sourceTask.id; 
-                        // const originalTaskNumericId = originalTaskId.split(':')[1]; // No longer needed for updating original task
-                        // const originalTaskName = taskAttributes.Name?.value || originalTaskId; // No longer needed for status messages
-
-                        // Build task payload for the NEW task
-                        const newTaskPayload = {
-                            Attributes: {
-                                Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
-                                Parent: { value: newStoryId, act: 'set' },
-                                
-                                // Handle optional fields with appropriate null checks
-                                ...(taskAttributes.Description?.value && { 
-                                    Description: { value: taskAttributes.Description.value, act: 'set' } 
-                                }),
-                                
-                                // Handle Category with ID reference checks
-                                ...(taskAttributes.Category?.value?.idref && { 
-                                    Category: { value: taskAttributes.Category.value.idref, act: 'set' } 
-                                }),
-                                
-                                // Handle ToDo with numeric validation
-                                ...(taskAttributes.ToDo?.value !== undefined && taskAttributes.ToDo?.value !== null && {
-                                    ToDo: { 
-                                        value: typeof taskAttributes.ToDo.value === 'number' ? 
-                                               taskAttributes.ToDo.value : 
-                                               parseFloat(taskAttributes.ToDo.value), 
-                                        act: 'set' 
-                                    }
-                                }),
-
-                                // --- Add Task Tags (Corrected) --- 
-                                ...(taskAttributes.TaggedWith?.value && taskAttributes.TaggedWith.value.length > 0 && {
-                                    TaggedWith: {
-                                        act: "set", // Use set for tags
-                                        value: taskAttributes.TaggedWith.value 
-                                    }
-                                })
-                                // --- End Add Task Tags ---
-                            }
-                        };
-                        
-                        // Add Owners with multi-value attribute handling (using "add" operation)
-                        if (taskAttributes.Owners?.value && 
-                            Array.isArray(taskAttributes.Owners.value) && 
-                            taskAttributes.Owners.value.length > 0) {
-                            
-                            const validOwners = taskAttributes.Owners.value
-                                .filter(o => o && o.idref && typeof o.idref === 'string')
-                                .map(o => o.idref);
-                            
-                            if (validOwners.length > 0) {
-                                newTaskPayload.Attributes.Owners = {
-                                    act: "add",
-                                    value: validOwners.length === 1 ? validOwners[0] : validOwners
-                                };
-                            }
-                        }
-                        
-                        // Create the task
+                         // Task payload building and API call logic remains the same
+                         const taskAttributes = sourceTask.Attributes;
+                         const newTaskPayload = {
+                             Attributes: {
+                                 Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
+                                 Parent: { value: newStoryId, act: 'set' },
+                                 ...(taskAttributes.Description?.value && { 
+                                     Description: { value: taskAttributes.Description.value, act: 'set' } 
+                                 }),
+                                 ...(taskAttributes.Category?.value?.idref && { 
+                                     Category: { value: taskAttributes.Category.value.idref, act: 'set' } 
+                                 }),
+                                 ...(taskAttributes.ToDo?.value !== undefined && taskAttributes.ToDo?.value !== null && {
+                                     ToDo: { 
+                                         value: typeof taskAttributes.ToDo.value === 'number' ? 
+                                                taskAttributes.ToDo.value : 
+                                                parseFloat(taskAttributes.ToDo.value), 
+                                         act: 'set' 
+                                     }
+                                 }),
+                                 ...(taskAttributes.TaggedWith?.value && taskAttributes.TaggedWith.value.length > 0 && {
+                                     TaggedWith: {
+                                         act: "set", 
+                                         value: taskAttributes.TaggedWith.value 
+                                     }
+                                 })
+                             }
+                         };
+                         if (taskAttributes.Owners?.value && 
+                             Array.isArray(taskAttributes.Owners.value) && 
+                             taskAttributes.Owners.value.length > 0) {
+                             const validOwners = taskAttributes.Owners.value
+                                 .filter(o => o && o.idref && typeof o.idref === 'string')
+                                 .map(o => o.idref);
+                             if (validOwners.length > 0) {
+                                 newTaskPayload.Attributes.Owners = {
+                                     act: "add",
+                                     value: validOwners.length === 1 ? validOwners[0] : validOwners
+                                 };
+                             }
+                         }
+                         
                         const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
                         if (createTaskResponse && createTaskResponse.id) {
                             taskSuccessCount++;
                         } else {
-                            console.error(`Failed to create task for story ${newStoryId}`);
+                            console.error(`Failed to create task copy for new story ${newStoryId}. Original task ID: ${sourceTask.id}`);
                             taskErrorCount++;
                         }
                     } catch (error) {
-                        console.error(`Error creating task for story ${newStoryId}:`, error);
+                        console.error(`Error creating task copy for new story ${newStoryId}:`, error);
                         taskErrorCount++;
                     }
                 }
+                // --- End Copy Tasks ---
 
-                successCount++;
-                
-                // Update status message with task copying results
-                if (originalTasks.length > 0) {
-                    if (taskErrorCount > 0) {
-                        showStatus(`Copied story ${storyOid} with ${taskSuccessCount}/${originalTasks.length} tasks (${taskErrorCount} tasks failed).`);
-                    } else {
-                        showStatus(`Successfully copied story ${storyOid} with all ${taskSuccessCount} tasks.`);
-                    }
+                // --- Mark overall copy success --- 
+                if (taskErrorCount > 0) {
+                    showStatus(`Copied story ${currentStoryNumberLog} with ${taskSuccessCount}/${originalTasks.length} tasks (${taskErrorCount} tasks failed).`, true);
                 } else {
-                    showStatus(`Successfully copied story ${storyOid} (no tasks found).`);
+                    showStatus(`Successfully copied story ${currentStoryNumberLog} with all ${taskSuccessCount} tasks.`);
+                    copySuccessful = true; // Mark as fully successful only if all tasks copied
                 }
+                successCount++; // Increment story success count even if some tasks failed
 
             } catch (error) {
-                // Catch any truly unexpected errors within the loop
-                console.error(`Unexpected error copying story ${storyOid}:`, error);
+                // Catch any truly unexpected errors within the main loop for this story
+                console.error(`Unexpected error processing story ${storyOid}:`, error);
                 showStatus(`Unexpected error copying story ${storyOid}: ${error.message}`, true);
                 errorCount++;
-            }
-        }
+                copySuccessful = false; // Ensure close doesn't run on unexpected error
+            } 
 
-        // Final status update
+            // --- STEP 5: Close Original Story (Only if copy was successful) --- 
+            if (copySuccessful) {
+                const closedStateId = 128; 
+                const closeOperationName = 'QuickClose';
+                const originalAssetState = sourceAttributes?.AssetState?.value;
+                const currentStoryNumberLog = sourceAttributes?.Number?.value || originalStoryNumberForLog;
+
+                if (originalAssetState !== closedStateId) {
+                    showStatus(`Attempting to close original story ${currentStoryNumberLog} (post-copy)...`);
+                    try {
+                        const closeResponse = await v1ApiCall(`rest-1.v1/Data/Story/${storyNumericId}?op=${closeOperationName}`, 'POST', null); 
+                        
+                        if (closeResponse?.error) {
+                             console.error(`Operation '${closeOperationName}' failed for original story ${currentStoryNumberLog}. Error: ${closeResponse.message}`);
+                             showStatus(`Warning: Failed to close original story ${currentStoryNumberLog} after successful copy.`, true);
+                        } else {
+                            showStatus(`Original story ${currentStoryNumberLog} closed successfully after copy.`);
+                        }
+                    } catch (closeError) {
+                        console.error(`Unexpected error executing operation '${closeOperationName}' on original story ${currentStoryNumberLog}:`, closeError);
+                        showStatus(`Warning: Error closing original story ${currentStoryNumberLog} after successful copy.`, true);
+                    }
+                } else {
+                     showStatus(`Original story ${currentStoryNumberLog} was already closed. No action needed.`);
+                }
+            } else {
+                 console.log(`Skipping closure of original story ${storyOid} because copy was not fully successful.`);
+                 showStatus(`Skipping closure for original story ${sourceAttributes?.Number?.value || storyOid} due to copy issues.`);
+            }
+             // --- End Close Original Story --- 
+        }
+        // --- Final status update (remains the same) --- 
         let finalMessage = `Copy complete. ${successCount} stories copied successfully.`;
         if (skippedCount > 0) {
             finalMessage += ` ${skippedCount} stories skipped (missing required Parent).`;
