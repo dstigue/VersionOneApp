@@ -722,6 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const taskNames = story.Attributes['Children:Task.Name']?.value;
             const taskNumbers = story.Attributes['Children:Task.Number']?.value;
             const taskToDos = story.Attributes['Children:Task.ToDo']?.value; // Get ToDo array
+            const taskDetailsMap = story.taskDetailsMap || new Map(); // Use the attached map, default to empty
 
             // --- Relaxed IF Condition ---
             if (tasks && tasks.length > 0) {
@@ -736,6 +737,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     const taskIdRef = taskRef.idref;
                     const taskToDoRaw = (taskToDos && index < taskToDos.length) ? taskToDos[index] : null; // Safe access
                     // --------------------------------
+
+                    // --- NEW: Get task details from the map using taskIdRef ---
+                    const details = taskDetailsMap.get(taskIdRef);
+                    const taskNameFromMap = details?.Name?.value || 'Unnamed Task';
+                    const taskNumberFromMap = details?.Number?.value || '';
+                    const taskToDoRawFromMap = details?.ToDo?.value;
+                     // Use description from map if available, otherwise keep original logic (which was removed, so default to empty)
+                    const taskDescriptionFromMap = details?.Description?.value || ''; 
+                    // --- END: Get task details from map ---
+
 
                     // --- Task Item Creation (li, label, checkbox) ---
                     const taskLi = document.createElement('li');
@@ -756,28 +767,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // --- Calculate ToDo & Create Badges ---
                     let taskToDoHours = '0';
+                    console.log(`[Task ${taskNumber || taskIdRef}] Raw ToDo:`, taskToDoRaw, `(Type: ${typeof taskToDoRaw})`); // DEBUG LOG ADDED
                     if (taskToDoRaw !== null && taskToDoRaw !== undefined) {
                         const parsedToDo = parseFloat(taskToDoRaw);
+                        console.log(`[Task ${taskNumber || taskIdRef}] Parsed ToDo:`, parsedToDo); // DEBUG LOG ADDED
                         taskToDoHours = !isNaN(parsedToDo) ? parsedToDo.toFixed(2) : '0';
                     }
+
+                    // --- NEW: Use taskToDoRawFromMap for calculation ---
+                     let taskToDoHoursFromMap = '0';
+                     console.log(`[Task ${taskNumberFromMap || taskIdRef}] Raw ToDo From Map:`, taskToDoRawFromMap, `(Type: ${typeof taskToDoRawFromMap})`); // DEBUG LOG ADDED
+                    if (taskToDoRawFromMap !== null && taskToDoRawFromMap !== undefined) {
+                        const parsedToDo = parseFloat(taskToDoRawFromMap);
+                         console.log(`[Task ${taskNumberFromMap || taskIdRef}] Parsed ToDo From Map:`, parsedToDo); // DEBUG LOG ADDED
+                        taskToDoHoursFromMap = !isNaN(parsedToDo) ? parsedToDo.toFixed(2) : '0';
+                    }
+                    // --- END: Use taskToDoRawFromMap --- 
+
+                     let taskToDoHoursInt = 0; // Default to 0
+                     console.log(`[Task ${taskNumberFromMap || taskIdRef}] Raw ToDo From Map:`, taskToDoRawFromMap, `(Type: ${typeof taskToDoRawFromMap})`);
+                    if (taskToDoRawFromMap !== null && taskToDoRawFromMap !== undefined) {
+                        const parsedToDo = parseFloat(taskToDoRawFromMap);
+                         console.log(`[Task ${taskNumberFromMap || taskIdRef}] Parsed ToDo From Map:`, parsedToDo);
+                        if (!isNaN(parsedToDo)) {
+                             taskToDoHoursInt = Math.round(parsedToDo); // Round to nearest integer
+                        }
+                        // If NaN, taskToDoHoursInt remains 0
+                    }
+                    const taskToDoHoursString = taskToDoHoursInt.toString();
+                    // --- END: Use taskToDoRawFromMap (Rounded) --- 
+
                     const hoursBadge = document.createElement('span');
                     hoursBadge.className = 'task-hours badge bg-success ms-auto ps-2 pe-2';
-                    hoursBadge.textContent = `${taskToDoHours}h`;
+                    hoursBadge.textContent = `${taskToDoHoursFromMap}h`; // Use value from map
+                     hoursBadge.textContent = `${taskToDoHoursString}h`; // Use rounded integer string
 
                     const taskNumberBadge = document.createElement('span');
                     taskNumberBadge.className = 'badge bg-secondary me-2';
-                    taskNumberBadge.textContent = taskNumber;
+                    taskNumberBadge.textContent = taskNumberFromMap; // Use value from map
                     // --- End Calculate ToDo & Create Badges ---
 
 
-                    // --- Append elements to task label ---
+                    // --- Append elements to task label (USING MAP VALUES) ---
                     taskLabel.appendChild(taskCheckbox);
-                    if (taskNumber) { // Only add badge if number exists and is not empty
+                    if (taskNumberFromMap) { // Only add badge if number exists from map
                         taskLabel.appendChild(taskNumberBadge);
                     }
-                    taskLabel.appendChild(document.createTextNode(` ${taskName} `)); // Use safely accessed taskName
-                    taskLabel.appendChild(hoursBadge);
-                    // --- End Append elements to task label ---
+                    taskLabel.appendChild(document.createTextNode(` ${taskNameFromMap} `)); // Use name from map
+                    taskLabel.appendChild(hoursBadge); // Already uses hours from map
+                    // --- END Append elements to task label (USING MAP VALUES) ---
 
                     taskLi.appendChild(taskLabel);
                     taskUl.appendChild(taskLi);
@@ -885,6 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectAllCheckbox.checked = false; // Reset Select All
             selectAllCheckbox.indeterminate = false;
             selectAllCheckbox.disabled = true;
+            updateSelectedCount(); // Ensure count is reset
             return;
         }
         showStatus(`Fetching stories...`);
@@ -895,26 +934,148 @@ document.addEventListener('DOMContentLoaded', () => {
         copyButton.disabled = true;
         currentStories = []; // Clear stored stories before fetch
         populateStoryOwnerFilter(currentStories); // Clear owner filter
+        updateSelectedCount(); // Ensure count is reset
 
-        // Update the query to explicitly include parallel task attributes
-        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Task.Name,Task.Number,Task.ToDo,Task.Description,Owners.Name&where=Timebox.ID='${timeboxId}'`;
+
+        // STEP 1: Fetch stories, ensuring we get Task IDs
+        // Removed Task.Name, Task.Number, Task.ToDo, Task.Description from sel
+        const storyQuery = `rest-1.v1/Data/Story?sel=Name,Number,Description,Parent.ID,Children:Task,Owners.Name&where=Timebox.ID='${timeboxId}'`;
         const storyResponse = await v1ApiCall(storyQuery);
 
-        if (!storyResponse || !storyResponse.Assets) {
-            showStatus('No stories found or error fetching stories.', true);
+        if (!storyResponse || storyResponse.error || !storyResponse.Assets) {
+            const errorMsg = storyResponse?.message || 'No stories found or error fetching stories.';
+            showStatus(errorMsg, true);
             showLoading(false);
+            currentStories = []; // Ensure empty on error
+            populateStoryOwnerFilter(currentStories);
+            updateSelectAllCheckboxState();
+            updateSelectedCount();
             return;
         }
 
-        // Attach full task details (No longer needed with parallel arrays)
         currentStories = storyResponse.Assets;
 
+        // STEP 2: Collect all unique Task OIDs
+        const taskOids = new Set();
+        currentStories.forEach(story => {
+            const taskRefs = story.Attributes['Children:Task']?.value;
+            if (taskRefs && Array.isArray(taskRefs)) {
+                taskRefs.forEach(taskRef => {
+                    if (taskRef && taskRef.idref) {
+                        taskOids.add(taskRef.idref);
+                    }
+                });
+            }
+        });
+
+        // STEP 3 & 4: Fetch Task Details and Create Lookup Map
+        const taskDetailsMap = new Map();
+        if (taskOids.size > 0) {
+            showStatus(`Fetching details for ${taskOids.size} unique tasks...`);
+            const taskOidList = Array.from(taskOids);
+            // Construct the 'where' clause for multiple IDs (using semicolon OR)
+            const taskWhereClause = taskOidList.map(oid => `ID='${oid}'`).join(';');
+            const taskSelectFields = 'Name,Number,ToDo,Description'; // Add other fields if needed later
+            // --- Force Cache Bypass: Add AssetType to sel --- 
+            const taskSelectFieldsWithCacheBust = 'Name,Number,ToDo,Description,AssetType'; 
+            // --- End Force Cache Bypass ---
+            const taskQuery = `rest-1.v1/Data/Task?sel=${taskSelectFieldsWithCacheBust}&where=${taskWhereClause}`;
+
+            const taskResponse = await v1ApiCall(taskQuery);
+
+            if (taskResponse && !taskResponse.error && taskResponse.Assets) {
+                taskResponse.Assets.forEach(task => {
+                    taskDetailsMap.set(task.id, task.Attributes);
+                });
+                showStatus(`Task details loaded. Rendering ${currentStories.length} stories...`);
+            } else {
+                const errorMsg = taskResponse?.message || 'Error fetching task details.';
+                showStatus(`Warning: Could not fetch task details (${errorMsg}). Tasks may display incomplete info.`, true);
+                // Continue without task details, displayStories will handle missing info
+            }
+
+            // --- NEW APPROACH: Fetch tasks individually --- 
+            const taskFetchPromises = [];
+            const taskSelectFieldsForSingle = 'Name,Number,ToDo,Description'; // Define fields needed
+
+            taskOidList.forEach(oid => {
+                const numericIdMatch = oid.match(/Task:(\d+)/); // Extract numeric ID
+                if (numericIdMatch && numericIdMatch[1]) {
+                    const numericId = numericIdMatch[1];
+                    const singleTaskQuery = `rest-1.v1/Data/Task/${numericId}?sel=${taskSelectFieldsForSingle}`;
+                     // Push the promise from v1ApiCall directly
+                    taskFetchPromises.push(v1ApiCall(singleTaskQuery, 'GET', null, true)); // Suppress status updates for individual calls
+                } else {
+                    console.warn(`Could not extract numeric ID from Task OID: ${oid}`);
+                }
+            });
+
+            showStatus(`Fetching details for ${taskFetchPromises.length} tasks individually...`);
+            
+            // Use Promise.allSettled to handle individual errors gracefully
+            const taskResults = await Promise.allSettled(taskFetchPromises);
+            
+            let successfulFetches = 0;
+            taskResults.forEach((result, index) => {
+                const originalOid = taskOidList[index]; // Get corresponding OID for mapping
+                if (result.status === 'fulfilled' && result.value && !result.value.error) {
+                    // result.value should be the direct response for a single task asset
+                    if (result.value.id && result.value.Attributes) {
+                        taskDetailsMap.set(result.value.id, result.value.Attributes);
+                        successfulFetches++;
+                    } else {
+                         console.warn(`Unexpected response structure for task ${originalOid}:`, result.value);
+                    }
+                } else {
+                    const reason = result.reason || result.value?.message || 'Unknown error';
+                    console.error(`Failed to fetch details for task ${originalOid}:`, reason);
+                    // Optionally show a more specific warning in the UI status
+                }
+            });
+            
+            showStatus(`Loaded details for ${successfulFetches}/${taskFetchPromises.length} tasks. Rendering ${currentStories.length} stories...`);
+            // --- END NEW APPROACH ---
+
+        } else {
+             showStatus(`Rendering ${currentStories.length} stories (no tasks found)...`);
+        }
+
+        // STEP 5: Enrich stories with the fetched task details map
+        currentStories.forEach(story => {
+            story.taskDetailsMap = taskDetailsMap; // Attach the map (can be empty)
+             // --- Add placeholder arrays if they don't exist to prevent errors in displayStories ---
+            // These won't be used if we modify displayStories correctly, but belt-and-suspenders
+            if (!story.Attributes['Children:Task.Name']) {
+                story.Attributes['Children:Task.Name'] = { value: [] };
+            }
+            if (!story.Attributes['Children:Task.Number']) {
+                 story.Attributes['Children:Task.Number'] = { value: [] };
+            }
+             if (!story.Attributes['Children:Task.ToDo']) {
+                 story.Attributes['Children:Task.ToDo'] = { value: [] };
+            }
+             if (!story.Attributes['Children:Task.Description']) {
+                 story.Attributes['Children:Task.Description'] = { value: [] };
+            }
+             // --- End placeholder addition ---
+        });
+
+
+        // STEP 6 (Implicit): Call displayStories (which will need modification)
         populateStoryOwnerFilter(currentStories);
-        displayStories(currentStories); // Pass stories with parallel arrays
+        displayStories(currentStories); // Pass stories enriched with taskDetailsMap
+
         // Ensure the Select All checkbox is always enabled when stories are present
         if (currentStories.length > 0) {
             selectAllCheckbox.disabled = false;
+            // Initial state update needed here too
+             updateSelectAllCheckboxState();
+             updateSelectedCount();
+        } else {
+             updateSelectAllCheckboxState(); // Ensure state is correct even if no stories
+             updateSelectedCount();
         }
+        // showStatus handled within the flow now
     }
 
     function getSelectedStories() {
@@ -980,11 +1141,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const storyNumericId = storyInfo.numericId;
             let originalStory = null; 
             let sourceAttributes = null;
-            let originalTasks = []; // Store fetched tasks here
+            let originalTasks = []; // Store fetched tasks here - **NO LONGER USED FOR PAYLOAD**
             let newStoryId = null; // Store the ID of the newly created story
             let copySuccessful = false; // Flag to track success for closing
             const originalStoryNumberForLog = storyOid;
             
+            // --- Find the full story data from currentStories to access the task map ---
+             const originalStoryData = currentStories.find(story => story.id === storyOid);
+             const taskDetailsMapForStory = originalStoryData?.taskDetailsMap || new Map();
+             if (!originalStoryData) {
+                 console.error(`Could not find story data in currentStories for ${storyOid}. Skipping copy.`);
+                 showStatus(`Error: Could not find internal data for story ${storyOid}. Skipping.`, true);
+                 errorCount++;
+                 continue;
+             }
+             // --- End Find story data ---
+
             try {
                 showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
 
@@ -1038,6 +1210,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error(`Unexpected error fetching tasks for story ${currentStoryNumberLog}:`, error);
                     showStatus(`Warning: Could not fetch tasks for story ${currentStoryNumberLog}. Story will be copied without tasks.`, true);
                 }
+                 console.log(`Using pre-fetched task details from map for story ${currentStoryNumberLog}.`);
                 // --- End Fetch Original Tasks ---
                 
                 // --- STEP 3: Create New Story Copy --- 
@@ -1101,91 +1274,96 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error(`Failed to create copy for story ${currentStoryNumberLog}. Error: ${errorDetail}`);
                     showStatus(`Error creating copy for ${currentStoryNumberLog}: ${errorDetail}. Skipping associated tasks and closure.`, true);
                     errorCount++;
+                    copySuccessful = false; // Ensure flag is false
                     continue; // Skip to next story if copy fails
                 }
+                // --- If story creation succeeded, mark as successful for now and increment count ---
                 newStoryId = createStoryResponse.id;
+                copySuccessful = true; 
+                successCount++; // Increment success count HERE
+                // -------------------------------------------------------------------------------
                 showStatus(`Created new story ${newStoryId}. Copying tasks...`);
-                // --- End Create New Story Copy ---
+                // --- End Create New Story Copy --- 
 
                 // --- STEP 4: Copy Tasks (Only Selected Ones) --- 
                 let taskSuccessCount = 0;
                 let taskErrorCount = 0;
                 let attemptedTaskCount = 0; // Track tasks we try to copy
                 
-                for (const sourceTask of originalTasks) {
-                    const sourceTaskId = sourceTask.id; // e.g., Task:12345
+                // --- Start NEW Task Payload Logic using Map --- 
+                for (const sourceTaskId of selectedTaskIds) {
+                    attemptedTaskCount++;
+                    const taskAttributesFromMap = taskDetailsMapForStory.get(sourceTaskId);
 
-                    const isSelected = selectedTaskIds.includes(sourceTaskId);
+                    if (!taskAttributesFromMap) {
+                        console.warn(`Could not find details in map for selected task ${sourceTaskId} under story ${currentStoryNumberLog}. Skipping this task.`);
+                        showStatus(`Warning: Missing details for task ${sourceTaskId}, skipping its copy.`, true);
+                        taskErrorCount++;
+                        continue; // Skip this specific task
+                    }
 
-                    if (isSelected) {
-                        attemptedTaskCount++;
-                        try {
-                             // Task payload building and API call logic remains the same
-                             const taskAttributes = sourceTask.Attributes;
-                             const newTaskPayload = {
-                                 Attributes: {
-                                     Name: { value: taskAttributes.Name?.value || 'Unnamed Task', act: 'set' },
-                                     Parent: { value: newStoryId, act: 'set' },
-                                     ...(taskAttributes.Description?.value && { 
-                                         Description: { value: taskAttributes.Description.value, act: 'set' } 
-                                     }),
-                                     ...(taskAttributes.Category?.value?.idref && { 
-                                         Category: { value: taskAttributes.Category.value.idref, act: 'set' } 
-                                     }),
-                                     ...(taskAttributes.ToDo?.value !== undefined && taskAttributes.ToDo?.value !== null && { // Allow 0 ToDo
-                                        ToDo: { 
-                                            value: typeof taskAttributes.ToDo.value === 'number' ? taskAttributes.ToDo.value : (parseFloat(taskAttributes.ToDo.value) || 0), // Default to 0 if parsing fails
-                                            act: 'set' 
-                                        }
-                                    }),
-                                     ...(taskAttributes.TaggedWith?.value && taskAttributes.TaggedWith.value.length > 0 && {
-                                         TaggedWith: {
-                                             act: "set", 
-                                             value: taskAttributes.TaggedWith.value 
-                                         }
-                                     })
-                                 }
-                             };
-                             if (taskAttributes.Owners?.value && 
-                                 Array.isArray(taskAttributes.Owners.value) && 
-                                 taskAttributes.Owners.value.length > 0) {
-                                 const validOwners = taskAttributes.Owners.value
-                                     .filter(o => o && o.idref && typeof o.idref === 'string')
-                                     .map(o => o.idref);
-                                 if (validOwners.length > 0) {
-                                     newTaskPayload.Attributes.Owners = {
-                                         act: "add",
-                                         value: validOwners.length === 1 ? validOwners[0] : validOwners
-                                     };
-                                 }
-                             }
-                             
-                            const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
-                            if (createTaskResponse && createTaskResponse.id) {
-                                taskSuccessCount++;
-                            } else {
-                                const taskErrorDetail = createTaskResponse?.message || 'Unknown task create error';
-                                console.error(`Failed to create task copy for new story ${newStoryId}. Original task ID: ${sourceTask.id}. Error: ${taskErrorDetail}`);
-                                taskErrorCount++;
+                    try {
+                        // Build payload using attributes from the map
+                        const newTaskPayload = {
+                            Attributes: {
+                                Name: { value: taskAttributesFromMap.Name?.value || 'Unnamed Task', act: 'set' },
+                                Parent: { value: newStoryId, act: 'set' },
+                                // Use description from map
+                                ...(taskAttributesFromMap.Description?.value && { 
+                                    Description: { value: taskAttributesFromMap.Description.value, act: 'set' } 
+                                }),
+                                // Category wasn't fetched in single-task query, add if needed
+                                // ...(taskAttributesFromMap.Category?.value?.idref && { ... })
+                                
+                                // Use ToDo from map
+                                    ...(taskAttributesFromMap.ToDo?.value !== undefined && taskAttributesFromMap.ToDo?.value !== null && { 
+                                    ToDo: { 
+                                        value: typeof taskAttributesFromMap.ToDo.value === 'number' ? taskAttributesFromMap.ToDo.value : (parseFloat(taskAttributesFromMap.ToDo.value) || 0), 
+                                        act: 'set' 
+                                    }
+                                }),
+                                // TaggedWith wasn't fetched, add if needed
+                                // ...(taskAttributesFromMap.TaggedWith?.value && ...)
+
+                                // Add other relevant fields from map if they were fetched e.g.:
+                                // DetailEstimate, Status.ID, Owners, Team.Name etc. 
+                                // Make sure these fields were included in 'taskSelectFieldsForSingle' in fetchStoriesAndTasks if needed
                             }
-                        } catch (error) {
-                            console.error(`Error creating task copy for new story ${newStoryId}:`, error);
+                        };
+                            
+                        // Owners wasn't fetched in single-task query - add fetch and logic if needed
+
+                        // Create the task
+                        const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
+                        if (createTaskResponse && !createTaskResponse.error && createTaskResponse.id) {
+                            taskSuccessCount++;
+                        } else {
+                            const taskErrorDetail = createTaskResponse?.message || 'Unknown task create error';
+                            console.error(`Failed to create task copy for ${sourceTaskId} under new story ${newStoryId}. Error: ${taskErrorDetail}`);
+                            showStatus(`Error copying task ${sourceTaskId}: ${taskErrorDetail}`, true);
                             taskErrorCount++;
                         }
+                    } catch (error) {
+                        console.error(`Unexpected error creating task copy for ${sourceTaskId} under new story ${newStoryId}:`, error);
+                            showStatus(`Error copying task ${sourceTaskId}: ${error.message}`, true);
+                        taskErrorCount++;
                     }
                 }
-                // --- End Copy Tasks ---
+                // --- End NEW Task Payload Logic using Map ---
 
                 // --- Mark overall copy success --- 
+                // --- Status Update after Task Copying (No longer increments successCount) ---
                 if (taskErrorCount > 0) {
                     showStatus(`Copied story ${currentStoryNumberLog} with ${taskSuccessCount}/${attemptedTaskCount} selected tasks (${taskErrorCount} tasks failed).`, true);
+                     // Story copy itself succeeded, but tasks had issues. copySuccessful remains true.
                 } else if (attemptedTaskCount > 0) {
                     showStatus(`Successfully copied story ${currentStoryNumberLog} with all ${taskSuccessCount} selected tasks.`);
-                    copySuccessful = true; // Mark as fully successful only if all *attempted* tasks copied
+                     // copySuccessful already true
                 } else { // No tasks were selected to be copied
                     showStatus(`Successfully copied story ${currentStoryNumberLog} (no tasks selected for copy).`);
-                     copySuccessful = true; // Still consider story copy successful
+                     // copySuccessful already true
                 }
+                // --- End Status Update ---
 
             } catch (error) {
                 // Catch any truly unexpected errors within the main loop for this story
@@ -1193,6 +1371,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 showStatus(`Unexpected error copying story ${storyOid}: ${error.message}`, true);
                 errorCount++;
                 copySuccessful = false; // Ensure close doesn't run on unexpected error
+                 // Decrement successCount if we already incremented it before the error
+                if (newStoryId) { // Check if story creation part was successful before error
+                     successCount = Math.max(0, successCount - 1);
+                }
             } 
 
             // --- STEP 5: Close Original Story (Only if copy was successful) --- 
