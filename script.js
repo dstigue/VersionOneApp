@@ -996,7 +996,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // --- NEW APPROACH: Fetch tasks individually --- 
             const taskFetchPromises = [];
-            const taskSelectFieldsForSingle = 'Name,Number,ToDo,Description'; // Define fields needed
+            // --- MODIFIED: Add TaggedWith to taskSelectFieldsForSingle ---
+            const taskSelectFieldsForSingle = 'Name,Number,ToDo,Description,TaggedWith'; // Define fields needed
+            // --- END MODIFICATION ---
 
             taskOidList.forEach(oid => {
                 const numericIdMatch = oid.match(/Task:(\d+)/); // Extract numeric ID
@@ -1161,7 +1163,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 showStatus(`Processing story ${i+1} of ${storiesToCopy.length}...`);
 
                 // --- STEP 1: Fetch Original Story Details ---
-                const baseSel = 'Name,Number,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,AssetState,TaggedWith';
+                // --- REVERTED: Use TaggedWith, not TaggedWith.ID ---
+                const baseSel = 'Name,Number,Description,Scope,Priority,Team,Owners,Estimate,Order,Super,AffectedByDefects,AssetState,TaggedWith'; 
+                // --- END REVERT ---
                 const optionalField = 'Custom_AcceptanceCriteria';
                 const fullSel = `${baseSel},${optionalField}`; 
                 let fetchErrorOccurred = false;
@@ -1192,27 +1196,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 const currentStoryNumberLog = sourceAttributes?.Number?.value || originalStoryNumberForLog;
                 // --- End Fetch Original Story ---
 
-                // --- STEP 2: Fetch Original Tasks --- 
-                const taskSel = 'Name,Description,Category,Owners,ToDo,Status.ID,TaggedWith';
-                try {
-                    showStatus(`Fetching tasks for original story ${currentStoryNumberLog}...`);
-                    const tasksResponse = await v1ApiCall(`rest-1.v1/Data/Task?sel=${taskSel}&where=Parent='${storyOid}'`);
-                    
-                    if (tasksResponse && !tasksResponse.error && tasksResponse.Assets) {
-                        originalTasks = tasksResponse.Assets;
-                        showStatus(`Found ${originalTasks.length} tasks for ${currentStoryNumberLog}. Proceeding with copy...`);
-                    } else if (tasksResponse?.error) {
-                        showStatus(`Warning: Could not fetch tasks for story ${currentStoryNumberLog} due to error: ${tasksResponse.message}. Story will be copied without tasks.`, true);
-                    } else {
-                        showStatus(`No tasks found for ${currentStoryNumberLog}. Continuing...`);
+                // --- STEP 2: Look up Tag OIDs (REMOVED - Use string names directly) ---
+                // let tagOids = []; // Array to hold resolved Tag OIDs (REMOVED)
+                const tagNames = (sourceAttributes.TaggedWith?.value || [])
+                    .filter(t => typeof t === 'string' && t.trim() !== ''); // Ensure only non-empty strings
+
+                /* // --- REMOVED Tag OID Lookup Block ---
+                if (tagNames.length > 0) {
+                    showStatus(`Looking up OIDs for ${tagNames.length} tags...`);
+                    try {
+                        // --- MODIFIED: Use /api/tags endpoint and different query structure ---
+                        const tagQueryString = tagNames.map(name => `tag=${encodeURIComponent(name)}`).join('&'); // Create tag=val1&tag=val2...
+                        const tagQuery = `api/tags?${tagQueryString}`;
+                        // --- END MODIFICATION ---
+                        
+                        // Pass null for body, true to suppress status updates during this specific call
+                        const tagResponse = await v1ApiCall(tagQuery, 'GET', null, true); 
+
+                        // --- ADDED: Log the raw response from /api/tags ---
+                        console.log('/api/tags response:', JSON.stringify(tagResponse, null, 2));
+                        // --- END LOG --- 
+
+                        // --- Temporarily comment out parsing logic until response structure is known ---
+                        /*
+                        if (tagResponse && !tagResponse.error && tagResponse.Assets) {
+                            const tagNameMap = new Map(tagResponse.Assets.map(tag => [tag.Attributes.Name.value, tag.id]));
+                            tagOids = tagNames.map(name => tagNameMap.get(name)).filter(oid => !!oid); // Get OIDs for found tags
+                            const foundCount = tagOids.length;
+                            if (foundCount < tagNames.length) {
+                                showStatus(`Warning: Could only find OIDs for ${foundCount}/${tagNames.length} tags associated with story ${currentStoryNumberLog}.`, true);
+                            }
+                        } else {
+                            showStatus(`Warning: Failed to look up tag OIDs for story ${currentStoryNumberLog}. Tags will not be copied. Error: ${tagResponse?.message || 'Unknown'}`, true);
+                        }
+                        * /
+                       // --- End Temporary Comment Out ---
+
+                    } catch (tagError) {
+                        console.error(`Error looking up tag OIDs for story ${currentStoryNumberLog}:`, tagError);
+                        showStatus(`Warning: Error looking up tag OIDs for story ${currentStoryNumberLog}. Tags will not be copied.`, true);
                     }
-                } catch (error) {
-                    console.error(`Unexpected error fetching tasks for story ${currentStoryNumberLog}:`, error);
-                    showStatus(`Warning: Could not fetch tasks for story ${currentStoryNumberLog}. Story will be copied without tasks.`, true);
                 }
-                 console.log(`Using pre-fetched task details from map for story ${currentStoryNumberLog}.`);
-                // --- End Fetch Original Tasks ---
-                
+                */ // --- END REMOVED Tag OID Lookup Block ---
+                // --- End Tag Lookup ---
+
                 // --- STEP 3: Create New Story Copy --- 
                 // --- Determine Super ID to use --- 
                 let superIdToUse = null;
@@ -1229,45 +1256,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 // --- End Determine Super ID ---
 
-                const newStoryPayload = { /* ... (payload building logic remains the same) ... */ };
-                 // Payload building logic - Copied from previous state for completeness
-                 newStoryPayload.Attributes = {
-                     Name: { value: sourceAttributes.Name?.value || 'Unnamed Story', act: 'set' },
-                     Timebox: { value: targetTimeboxId, act: 'set' },
-                     ...(!skipSuperAttribute && { Super: { value: superIdToUse, act: 'set' } }),
-                     ...(targetTimeboxScope ? 
-                         { Scope: { value: targetTimeboxScope, act: 'set' } } : 
-                         (sourceAttributes.Scope && sourceAttributes.Scope.value && 
-                          { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } })
-                     ),
-                     ...(sourceAttributes[optionalField] && sourceAttributes[optionalField].value !== null && { 
-                         [optionalField]: { value: sourceAttributes[optionalField].value, act: 'set' } 
-                     }),
-                     ...(sourceAttributes.Description && { Description: { value: sourceAttributes.Description.value, act: 'set' } }),
-                     ...(sourceAttributes.Priority && sourceAttributes.Priority.value && { Priority: { value: sourceAttributes.Priority.value.idref, act: 'set' } }),
-                     ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
-                     ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
-                     ...(sourceAttributes.TaggedWith && sourceAttributes.TaggedWith.value && sourceAttributes.TaggedWith.value.length > 0 && { TaggedWith: { value: sourceAttributes.TaggedWith.value, act: 'set' } }),
-                     ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
-                         AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
-                     }),
-                     ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && (() => {
-                         const validOwnerIdRefs = sourceAttributes.Owners.value
-                             .filter(o => o && o.idref) 
-                             .map(o => o.idref);
-                         if (validOwnerIdRefs.length > 0) {
-                             return { Owners: { act: 'add', value: validOwnerIdRefs.length === 1 ? validOwnerIdRefs[0] : validOwnerIdRefs } };
-                         } else {
-                             return {};
-                         }
-                     })()),
-                 };
+                // --- Remove logging for TaggedWith --- 
+                // console.log('Source Story Attributes TaggedWith:', JSON.stringify(sourceAttributes.TaggedWith, null, 2));
+                // --- End remove logging ---
+
+                const newStoryAttributes = { // Renamed to avoid conflict later
+                    Name: { value: sourceAttributes.Name?.value || 'Unnamed Story', act: 'set' },
+                    Timebox: { value: targetTimeboxId, act: 'set' },
+                    ...(!skipSuperAttribute && { Super: { value: superIdToUse, act: 'set' } }),
+                    ...(targetTimeboxScope ? 
+                        { Scope: { value: targetTimeboxScope, act: 'set' } } : 
+                        (sourceAttributes.Scope && sourceAttributes.Scope.value && 
+                         { Scope: { value: sourceAttributes.Scope.value.idref, act: 'set' } })
+                    ),
+                    ...(sourceAttributes[optionalField] && sourceAttributes[optionalField].value !== null && { 
+                        [optionalField]: { value: sourceAttributes[optionalField].value, act: 'set' } 
+                    }),
+                    ...(sourceAttributes.Description && { Description: { value: sourceAttributes.Description.value, act: 'set' } }),
+                    ...(sourceAttributes.Priority && sourceAttributes.Priority.value && { Priority: { value: sourceAttributes.Priority.value.idref, act: 'set' } }),
+                    ...(sourceAttributes.Team && sourceAttributes.Team.value && { Team: { value: sourceAttributes.Team.value.idref, act: 'set' } }),
+                    ...(sourceAttributes.Estimate && sourceAttributes.Estimate.value !== null && { Estimate: { value: sourceAttributes.Estimate.value, act: 'set' } }),
+                    // --- TaggedWith attribute removed from this initial payload ---
+                    ...(sourceAttributes.AffectedByDefects && sourceAttributes.AffectedByDefects.value && Array.isArray(sourceAttributes.AffectedByDefects.value) && sourceAttributes.AffectedByDefects.value.length > 0 && {
+                        AffectedByDefects: { value: sourceAttributes.AffectedByDefects.value.map(o => ({ idref: o.idref, act: 'add' })), act: 'set' }
+                    }),
+                    ...(sourceAttributes.Owners && sourceAttributes.Owners.value && Array.isArray(sourceAttributes.Owners.value) && sourceAttributes.Owners.value.length > 0 && (() => {
+                        const validOwnerIdRefs = sourceAttributes.Owners.value
+                            .filter(o => o && o.idref) 
+                            .map(o => o.idref);
+                        if (validOwnerIdRefs.length > 0) {
+                            return { Owners: { act: 'add', value: validOwnerIdRefs.length === 1 ? validOwnerIdRefs[0] : validOwnerIdRefs } };
+                        } else {
+                            return {};
+                        }
+                    })()),
+                    // ...(sourceAttributes.Order?.value && { Order: { value: sourceAttributes.Order.value, act: 'set' } }), // Removed Order attribute
+                };
                 if (skipSuperAttribute) {
-                    delete newStoryPayload.Attributes.Super;
+                    delete newStoryAttributes.Super;
                 }
 
                 showStatus(`Creating copy for story ${currentStoryNumberLog}...`);
-                const createStoryResponse = await v1ApiCall('rest-1.v1/Data/Story', 'POST', newStoryPayload);
+                const createStoryResponse = await v1ApiCall('rest-1.v1/Data/Story', 'POST', { Attributes: newStoryAttributes });
                 
                 if (!createStoryResponse || createStoryResponse.error) {
                     const errorDetail = createStoryResponse?.message || 'Unknown create error';
@@ -1282,8 +1312,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 copySuccessful = true; 
                 successCount++; // Increment success count HERE
                 // -------------------------------------------------------------------------------
-                showStatus(`Created new story ${newStoryId}. Copying tasks...`);
+                showStatus(`Created new story ${newStoryId}. Adding tags and copying tasks...`);
                 // --- End Create New Story Copy --- 
+
+                // --- STEP 3.5: Add Tags (Separate Update Call - One by one) ---
+                if (tagNames.length > 0) {
+                    const newStoryNumericId = newStoryId.split(':')[1]; // Extract numeric ID
+                    if (newStoryNumericId) {
+                        showStatus(`Adding ${tagNames.length} tags individually to new story ${newStoryId}...`);
+                        for (const tagName of tagNames) {
+                            const singleTagPayload = {
+                                Attributes: {
+                                    TaggedWith: {
+                                        value: tagName, // Single tag string
+                                        act: 'add'
+                                    }
+                                }
+                            };
+                            // Make a separate API call for each tag
+                            const tagUpdateResponse = await v1ApiCall(`rest-1.v1/Data/Story/${newStoryNumericId}`, 'POST', singleTagPayload, true);
+
+                            if (tagUpdateResponse?.error) {
+                                const tagErrorDetail = tagUpdateResponse.message || 'Unknown error adding tag';
+                                console.error(`Failed to add tag "${tagName}" to new story ${newStoryId}. Error: ${tagErrorDetail}`);
+                                showStatus(`Warning: Failed to add tag "${tagName}" to new story ${newStoryId}: ${tagErrorDetail}`, true);
+                                // Don't mark the whole copy as failed, just warn.
+                            } else {
+                                console.log(`Successfully added tag "${tagName}" to new story ${newStoryId}`);
+                            }
+                        }
+                     } else {
+                         console.error(`Could not extract numeric ID from new story OID ${newStoryId} to add tags.`);
+                         showStatus(`Warning: Could not add tags to new story ${newStoryId} due to ID issue.`, true);
+                     }
+                }
+                // --- End Add Tags ---
 
                 // --- STEP 4: Copy Tasks (Only Selected Ones) --- 
                 let taskSuccessCount = 0;
@@ -1337,6 +1400,43 @@ document.addEventListener('DOMContentLoaded', () => {
                         const createTaskResponse = await v1ApiCall('rest-1.v1/Data/Task', 'POST', newTaskPayload);
                         if (createTaskResponse && !createTaskResponse.error && createTaskResponse.id) {
                             taskSuccessCount++;
+                            const newTaskId = createTaskResponse.id;
+                            console.log(`Successfully created new task ${newTaskId} for story ${newStoryId}.`);
+
+                            // --- Add Tags to Task (Individually) ---
+                            const taskTagNames = (taskAttributesFromMap.TaggedWith?.value || [])
+                                .filter(t => typeof t === 'string' && t.trim() !== '');
+
+                            if (taskTagNames.length > 0) {
+                                const newTaskNumericId = newTaskId.split(':')[1];
+                                if (newTaskNumericId) {
+                                    console.log(`Attempting to add ${taskTagNames.length} tags to new task ${newTaskId}...`);
+                                    for (const taskTagName of taskTagNames) {
+                                        const singleTaskTagPayload = {
+                                            Attributes: {
+                                                TaggedWith: {
+                                                    value: taskTagName,
+                                                    act: 'add'
+                                                }
+                                            }
+                                        };
+                                        const taskTagUpdateResponse = await v1ApiCall(`rest-1.v1/Data/Task/${newTaskNumericId}`, 'POST', singleTaskTagPayload, true); // Suppress status
+
+                                        if (taskTagUpdateResponse?.error) {
+                                            const taskTagError = taskTagUpdateResponse.message || 'Unknown error adding task tag';
+                                            console.error(`Failed to add tag "${taskTagName}" to new task ${newTaskId}. Error: ${taskTagError}`);
+                                            showStatus(`Warning: Failed to add tag "${taskTagName}" to task ${newTaskId}.`, true);
+                                        } else {
+                                            console.log(`Successfully added tag "${taskTagName}" to new task ${newTaskId}`);
+                                        }
+                                    }
+                                } else {
+                                    console.error(`Could not extract numeric ID from new task OID ${newTaskId} to add tags.`);
+                                    showStatus(`Warning: Could not add tags to new task ${newTaskId} due to ID issue.`, true);
+                                }
+                            }
+                            // --- End Add Tags to Task ---
+
                         } else {
                             const taskErrorDetail = createTaskResponse?.message || 'Unknown task create error';
                             console.error(`Failed to create task copy for ${sourceTaskId} under new story ${newStoryId}. Error: ${taskErrorDetail}`);
