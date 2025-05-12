@@ -1647,11 +1647,9 @@ document.addEventListener('DOMContentLoaded', () => {
         authNtlmRadio.addEventListener('change', toggleAuthInputs);
         setupPasswordToggles(); // This function already adds its own listeners
         
-        // Main Actions
-        loadStoriesButton.addEventListener('click', () => {
-            const timeboxId = sourceTimeboxChoices.getValue()?.value;
-            fetchStoriesAndTasks(timeboxId);
-        });
+        // Main Actions - Removed Load Stories Button Listener
+        // loadStoriesButton.addEventListener('click', () => { ... });
+ 
         copyButton.addEventListener('click', copySelectedItems);
 
         // Filters & Dropdowns
@@ -1666,11 +1664,12 @@ document.addEventListener('DOMContentLoaded', () => {
             populateTimeboxSelect(targetTimeboxChoices, allTimeboxes);
             checkCopyButtonState();
         });
-        sourceTimeboxSelect.addEventListener('change', () => {
-            storiesListDiv.innerHTML = '<p>Click "Load Stories" to fetch items for the selected timebox.</p>'; 
-            copyButton.disabled = true; 
-            currentStories = []; 
-            populateStoryOwnerFilter(currentStories); 
+        // Modified sourceTimeboxSelect listener to load stories directly
+        sourceTimeboxSelect.addEventListener('change', (event) => { 
+            const timeboxId = event.target.value; // Get selected value directly
+            // Call fetchStoriesAndTasks immediately
+            fetchStoriesAndTasks(timeboxId);
+            // The fetchStoriesAndTasks function already handles UI updates (clearing list, status, buttons etc.)
             updateSelectedCount();
             updateSelectAllCheckboxState();
         });
