@@ -117,4 +117,4 @@ If you encounter issues:
 
 ## License
 
-This project is for internal use only. All rights reserved. 
+This project is licensed under the [MIT License](https://opensource.org/license/mit/) - see the [LICENSE](LICENSE) file for details.
